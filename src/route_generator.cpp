@@ -1,5 +1,7 @@
 #include <bits/stdc++.h>
 #include <cstdio>
+#include "json.hpp"
+using json = nlohmann::json;
 
 std::string run_overpass_fetch(const std::string& query) {
     //write query to temp file
@@ -44,7 +46,10 @@ int main(int argc, char* argv[]) {
             "out body;";
         std::string raw = run_overpass_fetch(query);
 
-        std::cout << "RAW : " << raw << "\n";
+        // std::cout << "RAW : " << raw << "\n";
+
+        json j = json::parse(raw);
+        std::cout << "ELEMENTS : " << j["elements"].size() << "\n";
 
     } 
     catch (const std::exception& e) {
