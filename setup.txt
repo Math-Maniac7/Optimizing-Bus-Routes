@@ -1,0 +1,5 @@
+I'm assuming that we're targeting windows. Not sure if many school districts have linux machines. 
+That being said, it's probably easiest to then develop on windows as well. 
+
+make sure you have python3 and some C++ compiler installed. Not sure about the C++ version, but I 
+imagine C++ 21 should be good enough. 
