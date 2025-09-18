@@ -1,7 +1,13 @@
-#include <bits/stdc++.h>
+#include <string>
+#include <iostream>
+#include <set>
+#include <vector>
+#include <map>
+#include <fstream>
 #include <cstdio>
 #include "json.hpp"
 using json = nlohmann::json;
+#include "graph.h"
 
 std::string run_overpass_fetch(const std::string& query) {
     //write query to temp file
@@ -49,8 +55,18 @@ int main(int argc, char* argv[]) {
         // std::cout << "RAW : " << raw << "\n";
 
         json j = json::parse(raw);
-        std::cout << "ELEMENTS : " << j["elements"].size() << "\n";
+        // std::cout << "ELEMENTS : " << j["elements"].size() << "\n";
+        std::set<std::string> types;
+        for(auto& [key, value] : j["elements"].items()) {
+            if(value.is_object() && value.contains("type")) types.insert(value["type"]);
+            
+            // std::cout << key << " : " << value << "\n";
+        }
 
+        std::cout << "TYPES :\n";
+        for(std::string s : types) std::cout << s << "\n";
+
+        Graph* g = Graph::parse(j);
     } 
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
