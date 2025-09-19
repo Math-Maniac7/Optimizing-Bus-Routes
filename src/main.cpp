@@ -52,21 +52,19 @@ int main(int argc, char* argv[]) {
             "out body;";
         std::string raw = run_overpass_fetch(query);
 
-        // std::cout << "RAW : " << raw << "\n";
-
         json j = json::parse(raw);
-        // std::cout << "ELEMENTS : " << j["elements"].size() << "\n";
-        std::set<std::string> types;
-        for(auto& [key, value] : j["elements"].items()) {
-            if(value.is_object() && value.contains("type")) types.insert(value["type"]);
-            
-            // std::cout << key << " : " << value << "\n";
+
+        {
+            std::set<std::string> types;
+            for(auto& [key, value] : j["elements"].items()) {
+                if(value.is_object() && value.contains("type")) types.insert(value["type"]);
+            }
+            std::cout << "TYPES :\n";
+            for(std::string s : types) std::cout << s << "\n";
         }
 
-        std::cout << "TYPES :\n";
-        for(std::string s : types) std::cout << s << "\n";
-
         Graph* g = Graph::parse(j);
+        std::cout << "GRAPH : " << g->nodes.size() << "\n";
     } 
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << "\n";
