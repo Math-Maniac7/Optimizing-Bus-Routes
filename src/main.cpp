@@ -5,41 +5,40 @@
 #include <map>
 #include <fstream>
 #include <cstdio>
+#include <format>
+#include <iomanip>
+#include <unistd.h> 
+#include <sys/wait.h>
+#include <curl/curl.h>
+
 #include "json.hpp"
 using json = nlohmann::json;
 #include "graph.h"
 #include "defs.h"
-#include <format>
-#include <iomanip>
+#include "http/http.h"
 
-std::string run_overpass_fetch(const std::string& query) {
-    //write query to temp file
-    std::string query_file = "overpass_query.tmp.txt";
-    {
-        std::ofstream f(query_file, std::ios::binary);
-        if (!f) throw std::runtime_error("failed to create temp query file");
-        f << query;
+std::string run_overpass_fetch(const std::string& query){
+    std::string endpoint = "https://overpass-api.de/api/interpreter";
+    std::vector<std::string> headers = {
+        "Content-Type: text/plain",
+        "Accept: application/json"
+    };
+
+    const auto resp = http_request(
+        endpoint,
+        "POST",
+        query,
+        headers,
+        60,
+        10,
+        true,
+        "overpass-client/1.0"
+    );
+
+    if (resp.status < 200 || resp.status >= 300) {
+        throw std::runtime_error("Overpass HTTP " + std::to_string(resp.status) + ": " + resp.body);
     }
-
-    //run overpass_fetch + read in output
-    std::string cmd = "py -3 overpass_fetch.py \"" + query_file + "\"";
-    std::string out;
-    char buf[4096];
-
-    FILE* pipe = _popen(cmd.c_str(), "rb");
-    if (!pipe) throw std::runtime_error("_popen failed");
-    while (true) {
-        size_t n = fread(buf, 1, sizeof(buf), pipe);
-        if (n == 0) break;
-        out.append(buf, n);
-    }
-    int rc = _pclose(pipe);
-
-    //delete temp file
-    if(std::remove(query_file.c_str()) != 0) throw std::runtime_error("error deleting query file");
-
-    if (rc != 0) throw std::runtime_error("python exited with code " + std::to_string(rc));
-    return out;
+    return resp.body;
 }
 
 std::string make_query(ld min_lat, ld min_lon, ld max_lat, ld max_lon) {
@@ -90,6 +89,39 @@ Graph* create_graph(ld min_lat, ld min_lon, ld max_lat, ld max_lon) {
     }
 }
 
+// returns a GeoJSON FeatureCollection with a single LineString feature.
+json nodes_to_geojson(std::vector<Node*>& nodes) {
+    assert(nodes.size() != 0);
+
+    json coords = json::array();
+    for (const Node* n : nodes) {
+        assert(n != nullptr);
+
+        // GeoJSON expects [lon, lat]
+        double lon = (double) (n->coord.lon);
+        double lat = (double) (n->coord.lat);
+        coords.push_back({lon, lat});
+    }
+
+    json feature = {
+        {"type", "Feature"},
+        {"properties", {
+            {"name", "route"}
+        }},
+        {"geometry", {
+            {"type", "LineString"},
+            {"coordinates", coords}
+        }}
+    };
+
+    json fc = {
+        {"type", "FeatureCollection"},
+        {"features", json::array({feature})},
+    };
+
+    return fc;
+}
+
 int main(int argc, char* argv[]) {
 
     ld start_lat = 30.622393, start_lon = -96.353059;
@@ -111,13 +143,19 @@ int main(int argc, char* argv[]) {
 
     int start = g->get_node(Coordinate(start_lat, start_lon));
     int end = g->get_node(Coordinate(end_lat, end_lon));
-    std::vector<int> path = g->get_path(start, end, true);
+    std::vector<int> path = g->get_path(start, end, false);
     
     std::cout << "PATH : \n";
     for(int x : path) {
         Node* node = g->nodes[x];
         std::cout << std::fixed << std::setprecision(10) << node->coord.lat << " " << node->coord.lon << "\n";
     }
+
+    std::vector<Node*> nodes(path.size());
+    for(int i = 0; i < path.size(); i++) nodes[i] = g->nodes[path[i]];
+
+    json geojson = nodes_to_geojson(nodes);
+    std::cout << geojson << "\n";
 
     return 0;
 }

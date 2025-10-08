@@ -1,5 +1,9 @@
-I'm assuming that we're targeting windows. Not sure if many school districts have linux machines. 
-That being said, it's probably easiest to then develop on windows as well. 
+We're going to develop on linux, then cross compile to WASM, which should be able to run on whatever OS you like that supports WASM. 
 
-make sure you have python3 and some C++ compiler installed. Not sure about the C++ version, but I 
-imagine C++ 21 should be good enough. 
+Dependencies:
+ - libcurl : C++ CURL library
+    sudo apt-get install libcurl4-openssl-dev
+
+
+
+
