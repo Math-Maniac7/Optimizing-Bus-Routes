@@ -30,4 +30,5 @@ HttpResponse http_request(
     const char* user_agent = "cpp-libcurl/1.0"
 );
 
+std::string url_encode(const std::string& s);
 

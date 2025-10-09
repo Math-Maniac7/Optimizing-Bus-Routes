@@ -98,3 +98,16 @@ HttpResponse http_request(
 
     return resp;
 }
+
+std::string url_encode(const std::string& s) {
+    std::string out; out.reserve(s.size()*3);
+    auto is_unreserved = [](unsigned char c){
+        return std::isalnum(c) || c=='-' || c=='_' || c=='.' || c=='~';
+    };
+    char buf[4];
+    for (unsigned char c : s) {
+        if (is_unreserved(c)) out.push_back(c);
+        else { std::snprintf(buf, sizeof(buf), "%%%.2X", c); out += buf; }
+    }
+    return out;
+}

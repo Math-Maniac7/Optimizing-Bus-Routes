@@ -122,10 +122,76 @@ json nodes_to_geojson(std::vector<Node*>& nodes) {
     return fc;
 }
 
+// freeform address to coordinate
+Coordinate geocode_freeform(const std::string& addr) {
+    std::ostringstream url;
+    url << "https://nominatim.openstreetmap.org/search"
+        << "?format=jsonv2&limit=1&addressdetails=1&"
+        << "q=" << url_encode(addr);
+
+    std::vector<std::string> hdrs = {"Accept: application/json"};
+    HttpResponse resp = http_request(url.str(), "GET", "", hdrs, 60, 10, true, "Router/1.0");
+
+    std::cout << "RESP : " << resp.status << " " << resp.body << "\n";
+    json j = json::parse(resp.body);
+    assert(j.is_array() && !j.empty());
+    const json& first = j[0];
+    assert(first.contains("lat") && first.contains("lon"));
+
+    ld lat = std::stold(first.at("lat").get<std::string>());
+    ld lon = std::stold(first.at("lon").get<std::string>());
+
+    return {lat, lon};
+}
+
+// structured address to coordinate
+Coordinate geocode_structured(
+    const std::string& street,
+    const std::string& city,
+    const std::string& state,
+    const std::string& country,
+    const std::string& postal
+) {
+    std::ostringstream url;
+    url << "https://nominatim.openstreetmap.org/search"
+        << "?format=jsonv2&limit=1&addressdetails=1"
+        << "&street=" << url_encode(street)
+        << "&city=" << url_encode(city)
+        << "&state=" << url_encode(state)
+        << "&country=" << url_encode(country)
+        << "&postalcode=" << url_encode(postal);
+
+    std::vector<std::string> hdrs = {"Accept: application/json"};
+    HttpResponse resp = http_request(url.str(), "GET", "", hdrs, 60, 10, true, "Router/1.0");
+
+    std::cout << "RESP : " << resp.status << " " << resp.body << "\n";
+    json j = json::parse(resp.body);
+    assert(j.is_array() && !j.empty());
+    const json& first = j[0];
+    assert(first.contains("lat") && first.contains("lon"));
+
+    ld lat = std::stold(first.at("lat").get<std::string>());
+    ld lon = std::stold(first.at("lon").get<std::string>());
+
+    return {lat, lon};
+}
+
 int main(int argc, char* argv[]) {
 
-    ld start_lat = 30.622393, start_lon = -96.353059;
-    ld end_lat = 30.616143, end_lon = -96.339186;
+    std::cout << "GEOCODE TEST" << std::endl;
+    // driveable
+    // bool walkable = false;
+    // Coordinate a = geocode_freeform("11012 Deep Brook Drive, Austin TX");
+    // Coordinate b = geocode_freeform("1801 Edelweiss Drive, Cedar Park TX");
+
+    // walkable
+    bool walkable = true;
+    Coordinate a = geocode_freeform("11012 Deep Brook Drive, Austin TX");
+    Coordinate b = geocode_freeform("10316 Prism Drive, Austin TX");
+
+    std::cout << "PATHING TEST" << std::endl;
+    ld start_lat = a.lat, start_lon = a.lon;
+    ld end_lat = b.lat, end_lon = b.lon;
 
     ld min_lat = std::min(start_lat, end_lat);
     ld min_lon = std::min(start_lon, end_lon);
@@ -141,9 +207,9 @@ int main(int argc, char* argv[]) {
     Graph* g = create_graph(min_lat, min_lon, max_lat, max_lon);
     std::cout << "DONE CREATE GRAPH\n";
 
-    int start = g->get_node(Coordinate(start_lat, start_lon));
-    int end = g->get_node(Coordinate(end_lat, end_lon));
-    std::vector<int> path = g->get_path(start, end, false);
+    int start = g->get_node(Coordinate(start_lat, start_lon), walkable);
+    int end = g->get_node(Coordinate(end_lat, end_lon), walkable);
+    std::vector<int> path = g->get_path(start, end, walkable);
     
     std::cout << "PATH : \n";
     for(int x : path) {

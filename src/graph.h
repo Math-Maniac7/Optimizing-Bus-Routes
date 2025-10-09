@@ -51,8 +51,14 @@ struct OSMWay {
 
 struct Node {
     Coordinate coord;
+
+    //these are true if there is an outgoing edge from here with these properties
+    bool is_walkable, is_driveable; 
+
     Node(Coordinate& _coord) {
         coord = _coord;
+        is_walkable = false;
+        is_driveable = false;
     }
 };
 
@@ -82,7 +88,7 @@ struct Graph {
     std::vector<int> get_path(int start, int end, bool walkable);
 
     //given some information, returns the node in graph that best matches it
-    int get_node(Coordinate coord);
+    int get_node(Coordinate coord, bool walkable);
     // TODO
     // int get_node(std::string addr);
 };

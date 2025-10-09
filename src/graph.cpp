@@ -3,15 +3,15 @@
 #include <queue>
 #include "defs.h"
 
-#define EARTH_RADIUS 3959.0
-
-typedef long double ld;
+ld deg_to_rad(ld d) {
+    return d * (PI / 180.0L);
+}
 
 //use haversine formula to compute geodesics
 ld calc_dist(Coordinate a, Coordinate b) {
     ld dlat = b.lat - a.lat;
     ld dlon = b.lon - a.lon;
-    ld inner = 1.0 - cos(dlat) + cos(a.lat) * cos(b.lat) * (1.0 - cos(dlon));
+    ld inner = 1.0 - cos(deg_to_rad(dlat)) + cos(deg_to_rad(a.lat)) * cos(deg_to_rad(b.lat)) * (1.0 - cos(deg_to_rad(dlon)));
     return 2.0 * EARTH_RADIUS * asin(sqrt(inner / 2.0));
 }
 
@@ -67,19 +67,40 @@ bool OSMWay::is_walkable() {
     std::string hw = tags.contains("highway") ? tags["highway"] : "";
     std::string access = tags.contains("access") ? tags["access"] : "";
     std::string foot = tags.contains("foot") ? tags["foot"] : "";
+    std::string footway = tags.contains("footway") ? tags["footway"] : "";
 
-    if (hw.empty()) return false;
-    if (hw == "construction" || hw == "proposed") return false;
+    if (hw.empty() || hw == "construction" || hw == "proposed") return false;
 
-    // default: pedestrians allowed unless explicitly forbidden on motorways
-    if (hw == "motorway" || hw == "motorway_link")
-        return foot == "yes"; // only if explicitly allowed
-
-    // is footpath explicitly blocked
+    // explicit bans
     if (foot == "no" || access == "no" || access == "private") return false;
 
-    return true;
+    // motorways only if explicitly allowed
+    if (hw == "motorway" || hw == "motorway_link") return foot == "yes";
+
+    // pedestrian infrastructure
+    if (hw == "footway" || hw == "path" || hw == "pedestrian" || hw == "steps" || hw == "track" || hw == "corridor") return true;
+
+    return false;
 }
+
+// lenient definition of walkable
+// bool OSMWay::is_walkable() {
+//     std::string hw = tags.contains("highway") ? tags["highway"] : "";
+//     std::string access = tags.contains("access") ? tags["access"] : "";
+//     std::string foot = tags.contains("foot") ? tags["foot"] : "";
+
+//     if (hw.empty()) return false;
+//     if (hw == "construction" || hw == "proposed") return false;
+
+//     // default: pedestrians allowed unless explicitly forbidden on motorways
+//     if (hw == "motorway" || hw == "motorway_link")
+//         return foot == "yes"; // only if explicitly allowed
+
+//     // is footpath explicitly blocked
+//     if (foot == "no" || access == "no" || access == "private") return false;
+
+//     return true;
+// }
 
 int OSMWay::drive_dir() {
     std::string ow = tags.contains("oneway") ? tags["oneway"] : "";
@@ -176,10 +197,19 @@ Graph* Graph::parse(json& j) {
         for(int i = 1; i < way->node_ids.size(); i++) {
             ll next = way->node_ids[i];
             ll u = node_inds.at(prev), v = node_inds.at(next);
+
+            //add edges
             Edge *e1 = new Edge(u, v, calc_dist(nodes[u]->coord, nodes[v]->coord), -1, is_driveable_forward, is_walkable_forward);
             adj[u].push_back(e1);
             Edge *e2 = new Edge(v, u, calc_dist(nodes[u]->coord, nodes[v]->coord), -1, is_driveable_backward, is_walkable_backward);
             adj[v].push_back(e2);
+            
+            //upd node walkable/driveable status
+            nodes[u]->is_driveable |= is_driveable_forward;
+            nodes[v]->is_driveable |= is_driveable_backward;
+            nodes[u]->is_walkable |= is_walkable_forward;
+            nodes[v]->is_walkable |= is_walkable_backward;
+
             prev = next;
         }
     }
@@ -261,10 +291,13 @@ std::vector<int> Graph::get_path(int start, int end, bool walkable) {
 }
 
 
-int Graph::get_node(Coordinate coord) {
+int Graph::get_node(Coordinate coord, bool walkable) {
     ld mn = 1e18;
     int ans = -1;
     for(int i = 0; i < nodes.size(); i++) {
+        if(walkable && !nodes[i]->is_walkable) continue;
+        if(!walkable && !nodes[i]->is_driveable) continue;
+
         ld dist = calc_dist(coord, nodes[i]->coord);
         if(dist < mn) {
             mn = dist;
