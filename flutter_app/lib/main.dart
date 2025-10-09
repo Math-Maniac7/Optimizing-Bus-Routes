@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
+import 'pages/home_page.dart';
+import 'pages/route_page.dart';
 
-void main(){
-  runApp(Router());
+void main() {
+  runApp(MyApp());
 }
 
-class Router extends StatefulWidget {
-  const Router({super.key});
+///A StatefulWidget that represents app's home route
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
-  @override
-  State<MyWidget> createState() => _MyWidgetState();
-}
-
-class _MyWidgetState extends State<MyWidget> {
   @override
   Widget build(BuildContext context) {
-    return const Placeholder();
+    return MaterialApp(
+      home: const HomePage(),
+      routes: {RouteOptimization.routeName: (_) => const RouteOptimization()},
+    );
   }
 }
