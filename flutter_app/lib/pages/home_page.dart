@@ -8,8 +8,10 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
+      backgroundColor: Color.fromRGBO(57, 103, 136, 1),
       body: Center(
         child: Padding(
           padding: EdgeInsets.only(top: screenHeight * 0.15),
@@ -18,20 +20,53 @@ class HomePage extends StatelessWidget {
             children: [
               Text(
                 'Bus Route Optimizer',
-                style: GoogleFonts.oswald(
+                style: GoogleFonts.quicksand(
                   fontSize: 80,
                   fontWeight: FontWeight.w700,
+                  color: const Color.fromARGB(255, 255, 255, 255),
                 ),
               ),
-              Row(
+              Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  TextButton(
-                    onPressed: () {
-                      // debugPrint('Get Started tapped');
-                      Navigator.pushNamed(context, RouteOptimization.routeName);
-                    },
-                    child: Text("Get Started!"),
+                  Padding(padding: EdgeInsets.only(top: screenHeight * 0.05)),
+                  Text(
+                    "Click login to get started!",
+                    style: GoogleFonts.quicksand(
+                      fontSize: 20,
+                      color: const Color.fromARGB(255, 255, 255, 255),
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.all(15.0),
+                    child: TextButton(
+                      style: ButtonStyle(
+                        backgroundColor: WidgetStatePropertyAll<Color>(
+                          const Color.fromARGB(117, 255, 255, 255),
+                        ),
+                        padding: WidgetStatePropertyAll<EdgeInsets>(
+                          EdgeInsets.symmetric(
+                            horizontal: screenWidth * .01,
+                            vertical: screenHeight * .01,
+                          ),
+                        ),
+                      ),
+                      onPressed: () {
+                        // debugPrint('Get Started tapped');
+                        Navigator.pushNamed(
+                          context,
+                          RouteOptimization.routeName,
+                        );
+                      },
+                      child: Text(
+                        "Login",
+                        style: GoogleFonts.quicksand(
+                          fontSize: 25,
+                          color: const Color.fromARGB(255, 255, 255, 255),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
