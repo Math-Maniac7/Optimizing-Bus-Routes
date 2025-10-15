@@ -122,6 +122,19 @@ class _SignupFormState extends State<SignupForm> {
                 ),
               ),
               SizedBox(height: screenHeight * .05),
+              InkWell(
+                onTap: () {
+                  Navigator.pushNamed(context, '/login');
+                },
+                child: Text(
+                  "Already have an account? Click Here",
+                  style: GoogleFonts.quicksand(
+                    fontSize: 25,
+                    color: const Color.fromARGB(255, 255, 255, 255),
+                  ),
+                ),
+              ),
+              SizedBox(height: screenHeight * .01),
               TextButton(
                 style: ButtonStyle(
                   backgroundColor: WidgetStatePropertyAll<Color>(
