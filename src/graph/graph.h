@@ -1,27 +1,19 @@
 #pragma once
-#include "defs.h"
 #include <vector>
 #include <map>
-#include "json.hpp"
-using json = nlohmann::json;
+#include <iostream>
+#include <queue>
 
-struct Coordinate {
-    ld lat, lon;
-    Coordinate() {
-        lat = 0, lon = 0;
-    }
-    Coordinate(ld _lat, ld _lon) {
-        lat = _lat, lon = _lon;
-    }
-};
+#include "../defs.h"
+#include "../routing/Coordinate.h"
 
 //represents some location on the surface of earth
 struct OSMNode {
     ll id;
-    Coordinate coord;
+    Coordinate* coord;
     OSMNode(ll _id, ld _lat, ld _lon) {
         id = _id;
-        coord = Coordinate(_lat, _lon);
+        coord = new Coordinate(_lat, _lon);
     }
 
     static OSMNode* parse(json& j);
@@ -50,13 +42,13 @@ struct OSMWay {
 };
 
 struct Node {
-    Coordinate coord;
+    Coordinate* coord;
 
     //these are true if there is an outgoing edge from here with these properties
     bool is_walkable, is_driveable; 
 
-    Node(Coordinate& _coord) {
-        coord = _coord;
+    Node(ld _lat, ld _lon) {
+        coord = new Coordinate(_lat, _lon);
         is_walkable = false;
         is_driveable = false;
     }
@@ -88,7 +80,7 @@ struct Graph {
     std::vector<int> get_path(int start, int end, bool walkable);
 
     //given some information, returns the node in graph that best matches it
-    int get_node(Coordinate coord, bool walkable);
+    int get_node(Coordinate* coord, bool walkable);
     // TODO
     // int get_node(std::string addr);
 };

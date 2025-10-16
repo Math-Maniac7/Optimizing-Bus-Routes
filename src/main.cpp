@@ -11,11 +11,10 @@
 #include <sys/wait.h>
 #include <curl/curl.h>
 
-#include "json.hpp"
-using json = nlohmann::json;
-#include "graph.h"
 #include "defs.h"
+#include "graph/graph.h"
 #include "http/http.h"
+#include "routing/BRP.h"
 
 std::string run_overpass_fetch(const std::string& query){
     std::string endpoint = "https://overpass-api.de/api/interpreter";
@@ -98,8 +97,8 @@ json nodes_to_geojson(std::vector<Node*>& nodes) {
         assert(n != nullptr);
 
         // GeoJSON expects [lon, lat]
-        double lon = (double) (n->coord.lon);
-        double lat = (double) (n->coord.lat);
+        double lon = (double) (n->coord->lon);
+        double lat = (double) (n->coord->lat);
         coords.push_back({lon, lat});
     }
 
@@ -123,7 +122,7 @@ json nodes_to_geojson(std::vector<Node*>& nodes) {
 }
 
 // freeform address to coordinate
-Coordinate geocode_freeform(const std::string& addr) {
+Coordinate* geocode_freeform(const std::string& addr) {
     std::ostringstream url;
     url << "https://nominatim.openstreetmap.org/search"
         << "?format=jsonv2&limit=1&addressdetails=1&"
@@ -141,11 +140,11 @@ Coordinate geocode_freeform(const std::string& addr) {
     ld lat = std::stold(first.at("lat").get<std::string>());
     ld lon = std::stold(first.at("lon").get<std::string>());
 
-    return {lat, lon};
+    return new Coordinate(lat, lon);
 }
 
 // structured address to coordinate
-Coordinate geocode_structured(
+Coordinate* geocode_structured(
     const std::string& street,
     const std::string& city,
     const std::string& state,
@@ -173,11 +172,10 @@ Coordinate geocode_structured(
     ld lat = std::stold(first.at("lat").get<std::string>());
     ld lon = std::stold(first.at("lon").get<std::string>());
 
-    return {lat, lon};
+    return new Coordinate(lat, lon);
 }
 
-int main(int argc, char* argv[]) {
-
+void do_test() {
     std::cout << "GEOCODE TEST" << std::endl;
     // driveable
     // bool walkable = false;
@@ -186,12 +184,12 @@ int main(int argc, char* argv[]) {
 
     // walkable
     bool walkable = true;
-    Coordinate a = geocode_freeform("11012 Deep Brook Drive, Austin TX");
-    Coordinate b = geocode_freeform("10316 Prism Drive, Austin TX");
+    Coordinate *a = geocode_freeform("11012 Deep Brook Drive, Austin TX");
+    Coordinate *b = geocode_freeform("10316 Prism Drive, Austin TX");
 
     std::cout << "PATHING TEST" << std::endl;
-    ld start_lat = a.lat, start_lon = a.lon;
-    ld end_lat = b.lat, end_lon = b.lon;
+    ld start_lat = a->lat, start_lon = a->lon;
+    ld end_lat = b->lat, end_lon = b->lon;
 
     ld min_lat = std::min(start_lat, end_lat);
     ld min_lon = std::min(start_lon, end_lon);
@@ -207,14 +205,14 @@ int main(int argc, char* argv[]) {
     Graph* g = create_graph(min_lat, min_lon, max_lat, max_lon);
     std::cout << "DONE CREATE GRAPH\n";
 
-    int start = g->get_node(Coordinate(start_lat, start_lon), walkable);
-    int end = g->get_node(Coordinate(end_lat, end_lon), walkable);
+    int start = g->get_node(new Coordinate(start_lat, start_lon), walkable);
+    int end = g->get_node(new Coordinate(end_lat, end_lon), walkable);
     std::vector<int> path = g->get_path(start, end, walkable);
     
     std::cout << "PATH : \n";
     for(int x : path) {
         Node* node = g->nodes[x];
-        std::cout << std::fixed << std::setprecision(10) << node->coord.lat << " " << node->coord.lon << "\n";
+        std::cout << std::fixed << std::setprecision(10) << node->coord->lat << " " << node->coord->lon << "\n";
     }
 
     std::vector<Node*> nodes(path.size());
@@ -222,6 +220,72 @@ int main(int argc, char* argv[]) {
 
     json geojson = nodes_to_geojson(nodes);
     std::cout << geojson << "\n";
+}
+
+int main(int argc, char* argv[]) {
+    if(argc != 3) {
+        std::cout << "Usage : \n";
+        std::cout << "<p1 | p2 | p3> <in_file>\n";  //TODO add <out_file>
+        return 1;
+    }
+
+    std::string type = argv[1];
+    if(!(type == "p1" || type == "p2" || type == "p3")) {
+        std::cout << "Unknown type : " << type << "\n";
+        return 1;
+    }
+
+    //read file, parse as json
+    std::string filepath = argv[2];
+    json input;
+    {
+        std::ifstream in(filepath);
+        if(!in) {
+            std::cerr << "Error: cannot open file: " << filepath << "\n";
+            return 1;
+        }
+        try {
+            in >> input;
+        } 
+        catch(const json::parse_error& e) {
+            std::cerr << "JSON parse error at byte " << e.byte << ": " << e.what() << "\n";
+            return 1;
+        }
+    }
+
+    //try to parse json into BRP
+    BRP* brp;
+    try {
+        brp = BRP::parse(input);
+    }
+    catch(const std::runtime_error e) {
+        std::cerr << "BRP parse error : " << e.what() << "\n";
+        return 1;
+    }
+
+    //solve BRP
+    try {
+        if(type == "p1") {
+            brp->do_p1();
+        } 
+        else if(type == "p2") {
+            brp->do_p2();
+        } 
+        else if(type == "p3") {
+            brp->do_p3();
+        } 
+        else {
+            assert(false);
+        }
+    } 
+    catch (const std::exception& e) {
+        std::cerr << "Error while processing (" << type << "): " << e.what() << "\n";
+        return 1;
+    }
+
+    //convert BRP to json and output
+    json output = brp->to_json();
+    std::cout << output << "\n";
 
     return 0;
 }

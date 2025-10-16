@@ -1,17 +1,14 @@
 #include "graph.h"
-#include <iostream>
-#include <queue>
-#include "defs.h"
 
 ld deg_to_rad(ld d) {
     return d * (PI / 180.0L);
 }
 
 //use haversine formula to compute geodesics
-ld calc_dist(Coordinate a, Coordinate b) {
-    ld dlat = b.lat - a.lat;
-    ld dlon = b.lon - a.lon;
-    ld inner = 1.0 - cos(deg_to_rad(dlat)) + cos(deg_to_rad(a.lat)) * cos(deg_to_rad(b.lat)) * (1.0 - cos(deg_to_rad(dlon)));
+ld calc_dist(Coordinate* a, Coordinate* b) {
+    ld dlat = b->lat - a->lat;
+    ld dlon = b->lon - a->lon;
+    ld inner = 1.0 - cos(deg_to_rad(dlat)) + cos(deg_to_rad(a->lat)) * cos(deg_to_rad(b->lat)) * (1.0 - cos(deg_to_rad(dlon)));
     return 2.0 * EARTH_RADIUS * asin(sqrt(inner / 2.0));
 }
 
@@ -172,7 +169,7 @@ Graph* Graph::parse(json& j) {
             OSMNode *node = i->second;
             assert(node_inds.count(id) == 0);
             node_inds.insert({id, ptr});
-            nodes.push_back(new Node(node->coord));
+            nodes.push_back(new Node(node->coord->lat, node->coord->lon));
             ptr ++;
         }
     }
@@ -291,7 +288,7 @@ std::vector<int> Graph::get_path(int start, int end, bool walkable) {
 }
 
 
-int Graph::get_node(Coordinate coord, bool walkable) {
+int Graph::get_node(Coordinate* coord, bool walkable) {
     ld mn = 1e18;
     int ans = -1;
     for(int i = 0; i < nodes.size(); i++) {

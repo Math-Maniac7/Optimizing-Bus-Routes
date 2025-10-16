@@ -75,8 +75,6 @@ HttpResponse http_request(
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, connect_timeout);
 
-    // (TLS verification is ON by default; leave it that way for production)
-
     rc = curl_easy_perform(curl);
 
     if (rc == CURLE_OK) {
