@@ -7,7 +7,7 @@ Student::Student(sid_t _id, Coordinate* _pos) {
 
 Student* Student::parse(json& j) {
     if(!j.contains("id") || !j.contains("pos")) {
-        throw new std::runtime_error("Student malformed");
+        throw std::runtime_error("Student malformed");
     }
     sid_t id = j["id"];
     Coordinate *pos = Coordinate::parse(j["pos"]);

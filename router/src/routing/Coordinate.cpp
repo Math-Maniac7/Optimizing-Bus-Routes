@@ -7,7 +7,7 @@ Coordinate::Coordinate(ld _lat, ld _lon) {
 
 Coordinate* Coordinate::parse(json& j) {
     if(!j.contains("lat") || !j.contains("lon")) {
-        throw new std::runtime_error("Coordinate malformed");
+        throw std::runtime_error("Coordinate malformed");
     }
     ld lat = j["lat"];
     ld lon = j["lon"];

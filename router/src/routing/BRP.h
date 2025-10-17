@@ -3,6 +3,8 @@
 #include <map>
 
 #include "../defs.h"
+#include "../graph/Graph.h"
+#include "../utils.h"
 #include "Coordinate.h"
 #include "Student.h"
 #include "Bus.h"
@@ -26,6 +28,9 @@ struct BRP {
     //Phase 3 output:
     std::optional<std::vector<BusRoute*>> routes;
 
+    //road graph
+    Graph* graph = nullptr;
+
     BRP(
         Coordinate* school, 
         Coordinate* bus_yard, 
@@ -40,8 +45,22 @@ struct BRP {
     BRP* make_copy();
     json to_json();
 
+    // outputs a geojson representation of the current state of the problem
+    // just for visualization
+    json to_geojson();
+
+    Student* get_student(sid_t id);
+    Bus* get_bus(bid_t id);
+    BusStop* get_stop(bsid_t id);
+    BusStopAssignment* get_assignment(bsaid_t id);
+    BusRoute* get_route(brid_t id);
+
     //ensures all semantic constraints are met
     void validate();
+
+    //generates lat/lon bounding box from school, bus_yard, and all students
+    //retrieves road graph within the bounding box. 
+    Graph* create_graph();
 
     void do_p1();
     void do_p2();

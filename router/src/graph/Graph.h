@@ -75,6 +75,9 @@ struct Graph {
     Graph() {}
     static Graph* parse(json& j);
 
+    //single source shortest paths
+    void sssp(int start, bool walkable, std::vector<ld>& out_dist, std::vector<int>& out_prev);
+
     //returns nodes on path from start to end node
     std::vector<int> get_path(int start, int end, bool walkable, ld& out_dist);
     std::vector<int> get_path(int start, int end, bool walkable);

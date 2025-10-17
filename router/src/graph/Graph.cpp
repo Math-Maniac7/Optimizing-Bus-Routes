@@ -1,4 +1,4 @@
-#include "graph.h"
+#include "Graph.h"
 
 ld deg_to_rad(ld d) {
     return d * (PI / 180.0L);
@@ -220,21 +220,19 @@ Graph* Graph::parse(json& j) {
     return g;
 }
 
-//takes in start and ending node, returns a vector of path indices. 
-
+//single source shortest path
 //TODO 
 // - factor in speed limit
 // - use A* instead of dijkstra
-std::vector<int> Graph::get_path(int start, int end, bool walkable, ld& out_dist) {
+void Graph::sssp(int start, bool walkable, std::vector<ld>& d, std::vector<int>& p) {
     int n = nodes.size();
 
-    //start, end must refer to valid nodes
+    //start must refer to a valid node
     assert(0 <= start && start < n);
-    assert(0 <= end && end < n);
     
     //run dijkstra
-    std::vector<int> p(n, -1);
-    std::vector<ld> d(n, 1e18);
+    p = std::vector<int>(n, -1);
+    d = std::vector<ld>(n, 1e18);
     d[start] = 0;
     std::priority_queue<std::pair<ld, int>> q;    //{-dist, ind}
     q.push({0, start});
@@ -260,9 +258,24 @@ std::vector<int> Graph::get_path(int start, int end, bool walkable, ld& out_dist
             }
         }
     }
+}
 
-    //a path must exist
-    assert(p[end] != -1);
+//takes in start and ending node, returns a vector of path indices. 
+std::vector<int> Graph::get_path(int start, int end, bool walkable, ld& out_dist) {
+    std::vector<ld> d;
+    std::vector<int> p;
+    int n = nodes.size();
+
+    //start and end must refer to valid nodes
+    assert(0 <= start && start < n);
+    assert(0 <= end && end < n);
+
+    this->sssp(start, walkable, d, p);
+
+    //check if a path exists
+    if(p[end] == -1) {
+        throw std::runtime_error("Graph::get_path() : path does not exist");
+    }
     assert(d[end] != 1e18);
 
     //generate path
