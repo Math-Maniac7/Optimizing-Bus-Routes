@@ -40,6 +40,9 @@ dependencies:
   firebase_auth: ^6.1.1
   firebase_core: ^4.2.0
   flutter_signin_button: ^2.1.1
+  csv: ^6.0.0
+  http: ^1.1.0
+  file_picker: ^6.1.1
 
 dev_dependencies:
   flutter_test:

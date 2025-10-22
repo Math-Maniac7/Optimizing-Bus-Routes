@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/maps.dart';
+import '../widgets/location_upload_drawer.dart';
 
 class RouteOptimization extends StatefulWidget {
   const RouteOptimization({super.key});
@@ -10,25 +11,34 @@ class RouteOptimization extends StatefulWidget {
 }
 
 class _RouteOptimizationState extends State<RouteOptimization> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
       body: Center(
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                TextButton(onPressed: () {}, child: Text("Add Locations")),
-                TextButton(onPressed: () {}, child: Text("Generate Routes")),
-                TextButton(onPressed: () {}, child: Text("New Params")),
-                TextButton(onPressed: () {}, child: Text("Boundaries")),
+                TextButton(
+                  onPressed: () {
+                    _scaffoldKey.currentState?.openEndDrawer();
+                  },
+                  child: const Text("Add Locations"),
+                ),
+                TextButton(onPressed: () {}, child: const Text("Generate Routes")),
+                TextButton(onPressed: () {}, child: const Text("New Params")),
+                TextButton(onPressed: () {}, child: const Text("Boundaries")),
               ],
             ),
-            Expanded(child: GoogleMaps()),
+            const Expanded(child: GoogleMaps()),
           ],
         ),
       ),
+      endDrawer: const LocationUploadDrawer(),
     );
   }
 }
