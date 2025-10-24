@@ -448,11 +448,31 @@ Graph* BRP::create_graph() {
 }
 
 void BRP::do_p1() {
-    throw std::runtime_error("p1 not implemented");
+    //for now, just assign each student to their own bus stop
+    this->stops = std::vector<BusStop*>();
+    for(int i = 0; i < this->students.size(); i++) {
+        Student *s = this->students[i];
+        this->stops.value().push_back(new BusStop(i, s->pos->make_copy(), {s->id}));
+    }
 }
 
 void BRP::do_p2() {
-    throw std::runtime_error("p2 not implemented");
+    assert(this->stops.has_value());
+
+    //for now, just assign all stops to one bus
+    this->assignments = std::vector<BusStopAssignment*>();
+    assert(this->buses.size() >= 1);
+    {
+        std::set<bsid_t> stops;
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            stops.insert(this->stops.value()[i]->id);
+        }
+        this->assignments.value().push_back(new BusStopAssignment(0, this->buses[0]->id, stops));
+    }
+
+    for(int i = 1; i < this->buses.size(); i++) {
+        this->assignments.value().push_back(new BusStopAssignment(i, this->buses[i]->id, {}));
+    }
 }
 
 void BRP::do_p3() {
