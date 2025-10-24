@@ -64,7 +64,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '251424756609',
     projectId: 'route-optimization-474616',
     storageBucket: 'route-optimization-474616.firebasestorage.app',
-    iosClientId: '251424756609-cckrse8tpfd2m5lo16t8pemjh62mfok1.apps.googleusercontent.com',
+    iosClientId:
+        '251424756609-cckrse8tpfd2m5lo16t8pemjh62mfok1.apps.googleusercontent.com',
     iosBundleId: 'com.example.flutterApp',
   );
 
@@ -74,7 +75,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '251424756609',
     projectId: 'route-optimization-474616',
     storageBucket: 'route-optimization-474616.firebasestorage.app',
-    iosClientId: '251424756609-cckrse8tpfd2m5lo16t8pemjh62mfok1.apps.googleusercontent.com',
+    iosClientId:
+        '251424756609-cckrse8tpfd2m5lo16t8pemjh62mfok1.apps.googleusercontent.com',
     iosBundleId: 'com.example.flutterApp',
   );
 
