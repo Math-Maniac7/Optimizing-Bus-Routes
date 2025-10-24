@@ -32,8 +32,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
         ..clear()
         ..addAll(newMarkers);
     });
-
-    print('Total markers after setState: ${_markers.length}');
   }
 
   @override
@@ -44,7 +42,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
         initialCameraPosition: CameraPosition(
           target: LatLng(30.622405, -96.353055),
-          zoom: 11,
+          zoom: 15,
         ),
         markers: _markers.values.toSet(),
       ),
