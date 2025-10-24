@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/maps.dart';
+import '../widgets/location_upload_drawer.dart';
 
 class RouteOptimization extends StatefulWidget {
   const RouteOptimization({super.key});
@@ -12,6 +13,7 @@ class RouteOptimization extends StatefulWidget {
 
 class _RouteOptimizationState extends State<RouteOptimization> {
   String activeMode = ''; // tracks which button is active
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
@@ -19,6 +21,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: const Color.fromRGBO(57, 103, 136, 1),
       body: Padding(
         padding: EdgeInsets.symmetric(
@@ -73,6 +76,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           ],
         ),
       ),
+      endDrawer: const LocationUploadDrawer(),
     );
   }
 
@@ -124,7 +128,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
   void _onAddLocations() {
     debugPrint("Add Locations button pressed");
-    // TODO: add logic for adding locations
+    _scaffoldKey.currentState?.openEndDrawer();
   }
 
   void _onGenerateRoutes() {
