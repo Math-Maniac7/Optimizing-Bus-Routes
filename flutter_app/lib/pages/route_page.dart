@@ -2,6 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/maps.dart';
 import '../widgets/location_upload_drawer.dart';
+import 'package:collection/collection.dart';
+
+typedef PhaseType = DropdownMenuEntry<Phase>;
+
+enum Phase {
+  phaseOne('Phase', 1),
+  phaseTwo('Phase', 2),
+  phaseThree('Phase', 3);
+
+  const Phase(this.label, this.phase);
+  final String label;
+  final int phase;
+
+  static final List<PhaseType> entries = UnmodifiableListView<PhaseType>(
+    values.map<PhaseType>(
+      (Phase p) => PhaseType(
+        value: p,
+        label: '${p.label} ${p.phase}',
+        style: MenuItemButton.styleFrom(
+          foregroundColor: const Color.fromRGBO(57, 103, 136, 1),
+        ),
+      ),
+    ),
+  );
+}
 
 class RouteOptimization extends StatefulWidget {
   const RouteOptimization({super.key});
@@ -12,8 +37,9 @@ class RouteOptimization extends StatefulWidget {
 }
 
 class _RouteOptimizationState extends State<RouteOptimization> {
-  String activeMode = ''; // tracks which button is active
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  Phase? selectedPhase;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +81,42 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                         _buildSideButton("Modify", screenWidth),
                         SizedBox(height: screenHeight * 0.02),
                         _buildSideButton("Boundaries", screenWidth),
+                        SizedBox(height: screenHeight * 0.02),
+                        DropdownMenu<Phase>(
+                          width: screenWidth * .1,
+                          initialSelection: Phase.phaseOne,
+                          requestFocusOnTap: false,
+                          onSelected: (Phase? p) {
+                            setState(() {
+                              selectedPhase = p;
+                            });
+                          },
+                          dropdownMenuEntries: Phase.entries,
+                          inputDecorationTheme: InputDecorationTheme(
+                            fillColor: const Color.fromARGB(180, 255, 255, 255),
+                            filled: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          menuStyle: MenuStyle(
+                            padding: WidgetStatePropertyAll<EdgeInsets>(
+                              EdgeInsets.symmetric(
+                                vertical: screenHeight * .02,
+                                horizontal: screenWidth * .031,
+                              ),
+                            ),
+                            backgroundColor: WidgetStatePropertyAll<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                          textStyle: GoogleFonts.quicksand(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -81,15 +143,12 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   }
 
   Widget _buildSideButton(String text, double screenWidth) {
-    final bool isActive = activeMode == text;
     return SizedBox(
       width: screenWidth * 0.15, // slim fixed width
       child: TextButton(
         style: ButtonStyle(
           backgroundColor: WidgetStatePropertyAll<Color>(
-            isActive
-                ? const Color.fromARGB(180, 255, 255, 255)
-                : const Color.fromARGB(90, 255, 255, 255),
+            const Color.fromARGB(180, 255, 255, 255),
           ),
           padding: const WidgetStatePropertyAll<EdgeInsets>(
             EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -99,10 +158,6 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           ),
         ),
         onPressed: () {
-          setState(() {
-            activeMode = text; // highlight this button
-          });
-
           // Call different functions depending on which was pressed
           if (text == "Add Locations") {
             _onAddLocations();
