@@ -456,6 +456,39 @@ void BRP::do_p1() {
     }
 }
 
+/*
+NOTES FOR PHASE 2
+
+overview:
+ - for each bus, initialize it with a cluster 'center'. 
+ - do multiple rounds:
+   - let the cost of assigning a stop to a bus be equal to the distance from the stop to its center
+   - run MCMF to assign the stops to the buses, with the above costs. 
+   - get which stops are assigned to which buses via flow graph. Recompute center for each bus
+
+on initializing centers:
+ - we'll use demand-weighted k-means clustering to initialize the centers. 
+ - all centers will be initialized on stops. Let d_i be the weight of each stop.
+ - for the first center, pick stop i with weight d_i
+ - for the remaining centers, pick stop i with weight d_i * min{dist(i, j)}^{\beta}
+ - higher \beta spreads stops out more
+
+on determining which stops are assigned to which buses 
+ - since we're using MCMF, it's likely that a stop can be partially assigned to multiple buses. 
+ - just find the bus where the majority of the flow is going to, the stop will be assigned to that bus. 
+
+on recomputing centers
+ - ideally, we compute the weighted medoid of the set of stops that are assigned to the bus. 
+ - if we precompute all distances between stops, can do this pretty easily. 
+
+on allowing for overbooking buses
+ - the MCMF will look something like (source) -> (stops) -> (buses) -> (sink)
+ - one set of edges from (buses) -> (sink) should reflect the base capacity of each bus, with 0 cost
+ - can allow for overbooking by adding another set of edges with high capacity and high cost. 
+ - if overflow is unacceptable, can have ghost bus with extremely high cost. Unmet demand will be assigned there
+
+*/
+
 void BRP::do_p2() {
     assert(this->stops.has_value());
 
