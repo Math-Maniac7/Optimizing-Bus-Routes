@@ -1,6 +1,12 @@
 #pragma once
 #include "../defs.h"
-#include <curl/curl.h>
+#include "../config.h"
+#if _ISWASM
+    #include <emscripten/fetch.h>
+#else
+    #include <curl/curl.h>
+#endif
+
 #include <string>
 #include <vector>
 #include <stdexcept>
@@ -12,6 +18,7 @@ struct HttpResponse {
     std::string body;                    // response body
     std::vector<std::string> headers;    // raw response headers
     std::string effective_url;           // URL after redirects
+    bool exists = false;
 };
 
 // simple HTTP client using libcurl
