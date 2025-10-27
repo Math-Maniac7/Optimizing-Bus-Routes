@@ -1,5 +1,180 @@
 #include "http.h"
+#include <iostream>
+#include <emscripten/fetch.h>
 
+
+/*
+size_t write_body_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    auto* out = static_cast<std::string*>(userdata);
+    out->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+size_t write_hdr_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    auto* out = static_cast<std::vector<std::string>*>(userdata);
+    const size_t n = size * nmemb;
+    // split incoming header chunk by '\n' (libcurl may call multiple times)
+    std::string line(ptr, n);
+    // normalize line endings; keep as-is if no CRLF
+    if (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+    }
+    if (!line.empty()) out->push_back(std::move(line));
+    return n;
+}
+*/
+
+#if _ISWASM
+
+//Download and succeed based on the examples
+void downloadSucceeded(emscripten_fetch_t *fetch) {
+    //Bit of stack overflow, vibecoding, reading the docs, and tears
+    // Ensure fetch is valid
+    if (!fetch) return;
+    // Initialize response struct
+    HttpResponse* resp = static_cast<HttpResponse*>(fetch->userData);
+    if (!resp) return;
+    // Set status code
+    resp->status = fetch->status;
+    // Set response body
+    resp->body.assign(fetch->data, fetch->numBytes);
+    // Set effective URL (after redirects)
+    resp->effective_url = fetch->url;
+    // Initialize headers vector
+    resp->headers.clear();
+    // Get headers length
+    size_t headersLength = emscripten_fetch_get_response_headers_length(fetch);
+    if (headersLength > 0) {
+        // Allocate buffer for headers
+        std::vector<char> headersBuffer(headersLength + 1);
+        emscripten_fetch_get_response_headers(fetch, headersBuffer.data(), headersLength + 1);
+
+        // Parse headers into key-value pairs
+        char** unpackedHeaders = emscripten_fetch_unpack_response_headers(headersBuffer.data());
+        if (unpackedHeaders) {
+            for (size_t i = 0; unpackedHeaders[i] != nullptr; i += 2) {
+                resp->headers.emplace_back(unpackedHeaders[i]);
+                resp->headers.emplace_back(unpackedHeaders[i + 1]);
+            }
+            // Free unpacked headers
+            emscripten_fetch_free_unpacked_response_headers(unpackedHeaders);
+        }
+    }
+    // Mark response as existing
+    resp->exists = true;
+    *((HttpResponse*)fetch->userData) = *resp;
+    // Close fetch
+    emscripten_fetch_close(fetch);
+}
+
+void downloadFailed(emscripten_fetch_t *fetch) {
+  printf("Downloading %s failed, HTTP status code: %d.\n",
+         fetch->url, fetch->status);
+    static_cast<HttpResponse*>(fetch->userData)->exists = true;
+
+
+  emscripten_fetch_close(fetch);
+}
+
+HttpResponse http_request(
+    const std::string& url,
+    const std::string& method,
+    const std::string& body,
+    const std::vector<std::string>& headers,
+    long timeout,
+    long connect_timeout,
+    bool follow_redirects,
+    const char* user_agent
+) {
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+
+    // Set method
+    strncpy(attr.requestMethod, method.c_str(), sizeof(attr.requestMethod)-1);
+    attr.requestMethod[sizeof(attr.requestMethod)-1] = '\0';
+
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+
+    //These functions are called on success or fail
+    attr.onsuccess = downloadSucceeded;
+    attr.onerror   = downloadFailed;
+
+    //Response goes here
+    HttpResponse resp;
+    resp.exists = false;
+    attr.userData = &resp;
+
+    // Set request headers
+    if (!headers.empty()) {
+        std::vector<const char*> hdr_ptrs;
+        hdr_ptrs.reserve(headers.size()+1);
+        for (const auto &h : headers) {
+            hdr_ptrs.push_back(h.c_str());
+        }
+        hdr_ptrs.push_back(nullptr);
+        attr.requestHeaders = hdr_ptrs.data();
+    }
+
+    if (!body.empty()) {
+        attr.requestData = (char*)body.c_str();
+        attr.requestDataSize = body.size();
+    }
+
+    //Actually fetch
+    emscripten_fetch(&attr, url.c_str());       
+
+    //wait for response
+    while (resp.exists == false){emscripten_sleep(10);}
+
+    
+
+    return resp;
+}
+
+std::string url_encode(const std::string& s) {
+    std::string out; out.reserve(s.size()*3);
+    auto is_unreserved = [](unsigned char c){
+        return std::isalnum(c) || c=='-' || c=='_' || c=='.' || c=='~';
+    };
+    char buf[4];
+    for (unsigned char c : s) {
+        if (is_unreserved(c)) out.push_back(c);
+        else { std::snprintf(buf, sizeof(buf), "%%%.2X", c); out += buf; }
+    }
+    return out;
+}
+
+int main() {
+    // Define the URL and other parameters
+    std::string url = "https://jsonplaceholder.typicode.com/posts/1";
+    std::string method = "GET";
+    std::string body = "";
+    std::vector<std::string> headers = {"User-Agent: MyHttpClient"};
+    long timeout = 5000; // Timeout in milliseconds
+    long connect_timeout = 1000; // Connect timeout in milliseconds
+    bool follow_redirects = true;
+    const char* user_agent = "MyHttpClient";
+
+    // Call the http_request function
+    HttpResponse response = http_request(url, method, body, headers, timeout, connect_timeout, follow_redirects, user_agent);
+
+    // Check if the request was successful
+    if (response.exists) {
+        std::cout << "Status: " << response.status << std::endl;
+        std::cout << "Body: " << response.body.substr(0, 200) << "..." << std::endl; // Print first 200 chars of body
+        std::cout << "Effective URL: " << response.effective_url << std::endl;
+        std::cout << "Headers: ";
+        for (const auto& header : response.headers) {
+            std::cout << header << " ";
+        }
+        std::cout << std::endl;
+    } else {
+        std::cerr << "Request failed." << std::endl;
+    }
+
+    return 0;
+}
+
+#else
 size_t write_body_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
     auto* out = static_cast<std::string*>(userdata);
     out->append(ptr, size * nmemb);
@@ -109,3 +284,5 @@ std::string url_encode(const std::string& s) {
     }
     return out;
 }
+
+#endif
