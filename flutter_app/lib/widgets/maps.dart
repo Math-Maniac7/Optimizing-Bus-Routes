@@ -3,7 +3,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_app/locations.dart' as locations;
 
 class GoogleMaps extends StatefulWidget {
-  const GoogleMaps({super.key});
+  final bool isModified;
+
+  GoogleMaps({super.key, required this.isModified});
 
   @override
   State<GoogleMaps> createState() => _GoogleMapsState();
@@ -23,6 +25,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
       newMarkers[key] = Marker(
         markerId: MarkerId(key),
         position: LatLng(stop.lat, stop.lng),
+        draggable: widget.isModified,
       );
       // print('Created marker $key at (${stop.lng}, ${stop.lat})');
     }
@@ -38,7 +41,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: GoogleMap(
-        onMapCreated: _onMapCreated,
+        onMapCreated: _onMapCreated(),
 
         initialCameraPosition: CameraPosition(
           target: LatLng(30.622405, -96.353055),
