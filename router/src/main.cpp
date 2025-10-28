@@ -97,6 +97,109 @@ void do_test() {
     std::cout << geojson << "\n";
 }
 
+BRP* parse_brp(char* json_str) {
+    std::string str(json_str);
+    json input = str;
+
+    //try to parse json into BRP and validate
+    BRP* brp;
+    try {
+        brp = BRP::parse(input);
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP parse error : " << e.what() << "\n";
+        return nullptr;
+    }
+    std::cout << "DONE PARSING BRP" << std::endl;
+
+    //validate BRP
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return nullptr;
+    }
+    std::cout << "DONE VALIDATING INPUT" << std::endl;
+
+    return brp;
+}
+
+char* do_p1(char* json_str) {
+    BRP* brp = parse_brp(json_str);
+    if(brp == nullptr) {
+        return "error parsing/validating brp";
+    }
+    brp->do_p1();
+
+    //validate before we output
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return "error validating output";
+    }
+    std::cout << "DONE VALIDATING OUTPUT" << std::endl;
+
+    json output = brp->to_geojson();
+    std::string output_str = to_string(output);
+
+    char* cstr = (char*) malloc(output_str.size());
+    memcpy(cstr, output_str.c_str(), output_str.size());
+    return cstr;
+}
+
+char* do_p2(char* json_str) {
+    BRP* brp = parse_brp(json_str);
+    if(brp == nullptr) {
+        return "error parsing/validating brp";
+    }
+    brp->do_p2();
+
+    //validate before we output
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return "error validating output";
+    }
+    std::cout << "DONE VALIDATING OUTPUT" << std::endl;
+
+    json output = brp->to_geojson();
+    std::string output_str = to_string(output);
+
+    char* cstr = (char*) malloc(output_str.size());
+    memcpy(cstr, output_str.c_str(), output_str.size());
+    return cstr;
+}
+
+char* do_p3(char* json_str) {
+    BRP* brp = parse_brp(json_str);
+    if(brp == nullptr) {
+        return "error parsing/validating brp";
+    }
+    brp->do_p3();
+
+    //validate before we output
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return "error validating output";
+    }
+    std::cout << "DONE VALIDATING OUTPUT" << std::endl;
+
+    json output = brp->to_geojson();
+    std::string output_str = to_string(output);
+
+    char* cstr = (char*) malloc(output_str.size());
+    memcpy(cstr, output_str.c_str(), output_str.size());
+    return cstr;
+}
+
 int main(int argc, char* argv[]) {
     if(argc != 3) {
         std::cout << "Usage : \n";
