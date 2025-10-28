@@ -2,6 +2,7 @@
 #include "defs.h"
 #include <string>
 #include <set>
+#include <sstream>
 
 #include "http/http.h"
 #include "graph/Graph.h"

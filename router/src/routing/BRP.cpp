@@ -1,5 +1,6 @@
 #include "BRP.h"
 #include <set>
+#include <random>
 #include "../utils.h"
 
 BRP::BRP(
@@ -113,9 +114,11 @@ json BRP::to_json() {
 }
 
 json BRP::to_geojson() {
+    std::cout << "begin to geoson" << std::endl;
     json features = json::array();
+    std::cout << "array made" << std::endl;
     Graph* graph = this->create_graph();
-
+    std::cout << "school" << std::endl;
     //school
     {
         json feature = {
@@ -130,7 +133,7 @@ json BRP::to_geojson() {
         };
         features.push_back(feature);
     }
-    
+    std::cout << "bus stops" << std::endl;
     //bus stops
     if(this->stops.has_value()) {
         for(int i = 0; i < this->stops.value().size(); i++) {
@@ -151,7 +154,7 @@ json BRP::to_geojson() {
             features.push_back(feature);
         }
     }
-    
+    std::cout << "bus routes" << std::endl;
     //bus routes
     if(this->routes.has_value()) {
         for(int i = 0; i < this->routes.value().size(); i++) {
@@ -188,12 +191,12 @@ json BRP::to_geojson() {
             features.push_back(feature);
         }
     }
-
+    std::cout << "fc" << std::endl;
     json fc = {
         {"type", "FeatureCollection"},
         {"features", features},
     };
-
+    std::cout << "return" << std::endl;
     return fc;
 }
 
@@ -425,10 +428,15 @@ void BRP::validate() {
 }
 
 Graph* BRP::create_graph() {
+    std::cout << "begin create graph" << std::endl;
     if(this->graph != nullptr) return this->graph;
+
+    std::cout << "not null" << std::endl;
 
     ld min_lat = std::min(school->lat, bus_yard->lat), max_lat = std::max(school->lat, bus_yard->lat);
     ld min_lon = std::min(school->lon, bus_yard->lon), max_lon = std::max(school->lon, bus_yard->lon);
+
+    std::cout << "min/max" << std::endl;
     
     for(Student* s : this->students) {
         min_lat = std::min(min_lat, s->pos->lat);
@@ -437,13 +445,19 @@ Graph* BRP::create_graph() {
         max_lon = std::max(max_lon, s->pos->lon);
     }
 
+    std::cout << "students" << std::endl;
+
     //add 5 mile buffer
     min_lat -= 0.07;
     min_lon -= 0.07;
     max_lat += 0.07;
     max_lon += 0.07;
 
+    std::cout << "buffer" << std::endl;
+
     this->graph = utils::create_graph(min_lat, min_lon, max_lat, max_lon);
+    std::cout << "created" << std::endl;
+
     return this->graph;
 }
 
@@ -535,7 +549,8 @@ void BRP::do_p3() {
         for(int j = 0; j < POPULATION_MAX; j++) {
             std::vector<int> next(m);
             for(int k = 0; k < m; k++) next[k] = k;
-            std::random_shuffle(next.begin(), next.end());
+            std::mt19937 rng(std::time(nullptr));
+            std::shuffle(next.begin(), next.end(), rng);
             population[j] = next;
         }
 

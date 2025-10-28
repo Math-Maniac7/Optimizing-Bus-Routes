@@ -12,6 +12,11 @@ struct HttpResponse {
     std::string body;                    // response body
     std::vector<std::string> headers;    // raw response headers
     std::string effective_url;           // URL after redirects
+<<<<<<< Updated upstream
+=======
+    bool exists = false;
+    //bool success = false;
+>>>>>>> Stashed changes
 };
 
 // simple HTTP client using libcurl

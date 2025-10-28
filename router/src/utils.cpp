@@ -19,6 +19,8 @@ namespace utils {
             "overpass-client/1.0"
         );
 
+        std::cout << "run_overpass_fetch request returned" << std::endl;
+
         if (resp.status < 200 || resp.status >= 300) {
             throw std::runtime_error("Overpass HTTP " + std::to_string(resp.status) + ": " + resp.body);
         }
@@ -46,10 +48,12 @@ namespace utils {
 
     Graph* create_graph(ld min_lat, ld min_lon, ld max_lat, ld max_lon) {
         try {
+            std::cout << "Make overpass" << std::endl;
             std::string query = make_overpass_query(min_lat, min_lon, max_lat, max_lon);
+            std::cout << "Run overpass fetch" << std::endl;
             std::string raw = run_overpass_fetch(query);
 
-            std::cout << "QUERY : " << query << "\n";
+            std::cout << "QUERY : " << query << std::endl;
 
             json j = json::parse(raw);
 
