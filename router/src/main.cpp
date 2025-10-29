@@ -125,6 +125,8 @@ BRP* parse_brp(char* json_str) {
     return brp;
 }
 
+#if _ISWASM
+
 extern EMSCRIPTEN_KEEPALIVE char* json_out_to_C_string(char** json_out){
     return *json_out;
 }
@@ -208,8 +210,6 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str) {
     memcpy(cstr, output_str.c_str(), output_str.size());
     return cstr;
 }
-
-#if _ISWASM
 
 /*
 int main(){

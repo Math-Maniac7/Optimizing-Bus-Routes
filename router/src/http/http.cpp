@@ -1,7 +1,5 @@
 #include "http.h"
 #include <iostream>
-#include <emscripten/fetch.h>
-
 
 /*
 size_t write_body_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
@@ -24,6 +22,7 @@ size_t write_hdr_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
 */
 
 #if _ISWASM
+#include <emscripten/fetch.h>
 
 //Download and succeed based on the examples
 void downloadSucceeded(emscripten_fetch_t *fetch) {
