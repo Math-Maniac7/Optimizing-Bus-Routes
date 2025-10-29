@@ -105,13 +105,35 @@ HttpResponse http_request(
 
     // Set request headers
     if (!headers.empty()) {
-        std::vector<const char*> hdr_ptrs;
-        hdr_ptrs.reserve(headers.size()+1);
-        for (const auto &h : headers) {
-            hdr_ptrs.push_back(h.c_str());
+        // Copy header strings into a separate vector to keep them alive
+        static std::vector<std::string> header_storage; 
+        header_storage = headers; // copy input headers
+
+        // Convert to const char* array
+        static std::vector<const char*> hdr_ptrs;
+        hdr_ptrs.clear();
+        for (const auto &h : header_storage) {
+            if (!h.empty() && h.find(':') != std::string::npos) {
+                auto pos {h.find(':')};
+                char* left {(char*)malloc(pos+1)};
+                memcpy(left, h.c_str(), pos);
+                left[pos] = '\0';
+                for (auto i{int(0)}; i < pos; i++){
+                    if (left[i] == ' ')
+                        left[i] = '\0';
+                }
+
+                char* right {(char*)malloc(h.size() - pos)};
+                memcpy(right, h.c_str() + pos + 1, h.size()-pos);
+
+                //hdr_ptrs.push_back(h.c_str()); // safe pointer
+               // hdr_ptrs.push_back(h.c_str()+ h.find(':'));
+               hdr_ptrs.push_back(left);
+               hdr_ptrs.push_back(right);
+            } else {
+                std::cerr << "Invalid header skipped: " << h << std::endl;
+            }
         }
-        hdr_ptrs.push_back(nullptr);
-        attr.requestHeaders = hdr_ptrs.data();
     }
 
     if (!body.empty()) {
@@ -143,6 +165,7 @@ std::string url_encode(const std::string& s) {
     return out;
 }
 
+/*
 int main() {
     // Define the URL and other parameters
     std::string url = "https://jsonplaceholder.typicode.com/posts/1";
@@ -172,7 +195,7 @@ int main() {
     }
 
     return 0;
-}
+}*/
 
 #else
 size_t write_body_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {

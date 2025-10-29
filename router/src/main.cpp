@@ -5,15 +5,15 @@
 #include <map>
 #include <fstream>
 #include <cstdio>
-#include <format>
+//#include <format>
 #include <iomanip>
 #include <unistd.h> 
-#include <sys/wait.h>
-#include <curl/curl.h>
+//#include <sys/wait.h>
+//#include <curl/curl.h>
 
 #include "defs.h"
 #include "graph/Graph.h"
-#include "http/http.h"
+//#include "http/http.h"
 #include "routing/BRP.h"
 #include "utils.h"
 
@@ -99,7 +99,7 @@ void do_test() {
 
 BRP* parse_brp(char* json_str) {
     std::string str(json_str);
-    json input = str;
+    json input = json::parse(str);
 
     //try to parse json into BRP and validate
     BRP* brp;
@@ -125,7 +125,12 @@ BRP* parse_brp(char* json_str) {
     return brp;
 }
 
-char* do_p1(char* json_str) {
+extern EMSCRIPTEN_KEEPALIVE char* json_out_to_C_string(char** json_out){
+    return *json_out;
+}
+
+extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
+    *json_out = 0;
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
         return "error parsing/validating brp";
@@ -145,12 +150,16 @@ char* do_p1(char* json_str) {
     json output = brp->to_geojson();
     std::string output_str = to_string(output);
 
-    char* cstr = (char*) malloc(output_str.size());
+    //char* cstr = (char*) malloc(output_str.size());
+    //memcpy(cstr, output_str.c_str(), output_str.size());
+    char* cstr = (char*) malloc(output_str.size() + 1); // +1 for '\0'
     memcpy(cstr, output_str.c_str(), output_str.size());
+    cstr[output_str.size()] = '\0';
+    *json_out = cstr;
     return cstr;
 }
 
-char* do_p2(char* json_str) {
+extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str) {
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
         return "error parsing/validating brp";
@@ -175,7 +184,7 @@ char* do_p2(char* json_str) {
     return cstr;
 }
 
-char* do_p3(char* json_str) {
+extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str) {
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
         return "error parsing/validating brp";
@@ -199,6 +208,24 @@ char* do_p3(char* json_str) {
     memcpy(cstr, output_str.c_str(), output_str.size());
     return cstr;
 }
+
+#if _ISWASM
+
+/*
+int main(){
+    std::cout  << "Prove something works";
+
+    const char* input = "{\"school\":{\"lat\":30.455773,\"lon\":-97.798242},\"bus_yard\":{\"lat\":30.455773,\"lon\":-97.798242},\"students\":[{\"id\":0,\"pos\":{\"lat\":30.4524471,\"lon\":-97.8115005}},{\"id\":1,\"pos\":{\"lat\":30.4427579,\"lon\":-97.8028133}},{\"id\":2,\"pos\":{\"lat\":30.4423536,\"lon\":-97.808608}},{\"id\":3,\"pos\":{\"lat\":30.4475907,\"lon\":-97.8188957}},{\"id\":4,\"pos\":{\"lat\":30.4543126,\"lon\":-97.8183026}}],\"buses\":[{\"id\":0,\"capacity\":100}],\"stops\":[{\"id\":0,\"pos\":{\"lat\":30.4524471,\"lon\":-97.8115005},\"students\":[0]},{\"id\":1,\"pos\":{\"lat\":30.4427579,\"lon\":-97.8028133},\"students\":[1]},{\"id\":2,\"pos\":{\"lat\":30.4423536,\"lon\":-97.808608},\"students\":[2]},{\"id\":3,\"pos\":{\"lat\":30.4475907,\"lon\":-97.8188957},\"students\":[3]},{\"id\":4,\"pos\":{\"lat\":30.4543126,\"lon\":-97.8183026},\"students\":[4]}],\"assignments\":[{\"id\":0,\"bus\":0,\"stops\":[0,1,2,3,4]}]}";
+    
+    char* err = (char*) malloc(strlen(input) + 1);
+    strcpy(err, input);
+
+    char* out = do_p1(err);
+    std::cout << out;
+    std::cout << "done" << std::endl;
+}*/
+
+#else
 
 int main(int argc, char* argv[]) {
     if(argc != 3) {
@@ -290,3 +317,5 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+#endif

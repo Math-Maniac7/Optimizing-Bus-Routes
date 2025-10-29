@@ -1,5 +1,8 @@
 #include "BRP.h"
 #include <set>
+#include <algorithm>
+#include <random>
+#include <ctime>
 #include "../utils.h"
 
 BRP::BRP(
@@ -588,7 +591,9 @@ void BRP::do_p3() {
         for(int j = 0; j < POPULATION_MAX; j++) {
             std::vector<int> next(m);
             for(int k = 0; k < m; k++) next[k] = k;
-            std::random_shuffle(next.begin(), next.end());
+            //std::random_shuffle(next.begin(), next.end());
+            std::mt19937 rng(std::time(nullptr));
+            std::shuffle(next.begin(), next.end(), rng);
             population[j] = next;
         }
 

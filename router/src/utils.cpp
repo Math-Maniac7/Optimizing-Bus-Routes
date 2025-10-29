@@ -20,6 +20,7 @@ namespace utils {
         );
 
         if (resp.status < 200 || resp.status >= 300) {
+            std::cout << "ERROR " << "Overpass HTTP " + std::to_string(resp.status) + ": " + resp.body << std::endl;
             throw std::runtime_error("Overpass HTTP " + std::to_string(resp.status) + ": " + resp.body);
         }
         return resp.body;
