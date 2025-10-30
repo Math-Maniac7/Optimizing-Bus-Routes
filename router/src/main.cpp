@@ -228,9 +228,10 @@ int main(){
 #else
 
 int main(int argc, char* argv[]) {
-    if(argc != 3) {
+    if(argc < 3) {
         std::cout << "Usage : \n";
         std::cout << "<p1 | p2 | p3> <in_file>\n";  //TODO add <out_file>
+        std::cout << "-geojson : returns a geojson representation of the resulting BRP\n";
         return 1;
     }
 
@@ -258,6 +259,20 @@ int main(int argc, char* argv[]) {
         }
     }
     std::cout << "DONE PARSING JSON" << std::endl;
+
+    //parse other flags
+    bool to_geojson = false;
+    int argptr = 3;
+    while(argptr != argc) {
+        std::string next(argv[argptr ++]);
+        if(next == "-geojson") {
+            to_geojson = true;
+        }
+        else {
+            std::cout << "Unknown flag : " + next << "\n";
+            return 1;
+        }
+    }
 
     //try to parse json into BRP and validate
     BRP* brp;
@@ -312,7 +327,13 @@ int main(int argc, char* argv[]) {
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 
     //convert BRP to json and output
-    json output = brp->to_geojson();
+    json output;
+    if(to_geojson) {
+        output = brp->to_geojson();
+    }
+    else {
+        output = brp->to_json();
+    }
     std::cout << output << "\n";
 
     return 0;

@@ -17,6 +17,14 @@ BusStopAssignment* BusStopAssignment::parse(json& j) {
     return new BusStopAssignment(id, bus, stops);
 }
 
+json BusStopAssignment::to_json() {
+    json ret;
+    ret["id"] = this->id;
+    ret["bus"] = this->bus;
+    ret["stops"] = this->stops;
+    return ret;
+}
+
 BusStopAssignment* BusStopAssignment::make_copy() {
     return new BusStopAssignment(id, bus, stops);
 }

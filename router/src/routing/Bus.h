@@ -9,5 +9,6 @@ struct Bus {
     Bus(bid_t _id, int _capacity);
 
     static Bus* parse(json& j);
+    json to_json();
     Bus* make_copy();
 };
