@@ -147,19 +147,22 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                   SizedBox(width: screenWidth * 0.02),
                   Expanded(
                     flex: 6, // give more width to the map
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      foregroundDecoration: BoxDecoration(
-                        backgroundBlendMode: BlendMode.overlay,
-                        color: isModified
-                            ? const Color.fromARGB(126, 255, 255, 255)
-                            : const Color.fromARGB(0, 255, 255, 255),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: GoogleMaps(),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: GoogleMaps(isModified: isModified),
+                        ),
+                        if (isModified)
+                          IgnorePointer(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color.fromARGB(126, 255, 255, 255),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],

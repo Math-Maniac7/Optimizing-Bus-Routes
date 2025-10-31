@@ -5,7 +5,7 @@ import 'package:flutter_app/locations.dart' as locations;
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
 
-  GoogleMaps({super.key, required this.isModified});
+  const GoogleMaps({super.key, required this.isModified});
 
   @override
   State<GoogleMaps> createState() => _GoogleMapsState();
@@ -13,21 +13,41 @@ class GoogleMaps extends StatefulWidget {
 
 class _GoogleMapsState extends State<GoogleMaps> {
   final Map<String, Marker> _markers = {};
-  int _id = 0;
+  late GoogleMapController mapController;
+  int id = 0;
+  List<dynamic> stops = [];
 
   Future<void> _onMapCreated(GoogleMapController controller) async {
-    final stops = await locations.loadGeoJson();
+    mapController = controller;
+    stops = await locations.loadGeoJson();
+    buildMarkers();
+  }
+
+  Future<void> buildMarkers() async {
     final newMarkers = <String, Marker>{};
-    // print('Loaded ${stops.length} stops from GeoJSON');
+
     for (final stop in stops) {
-      _id += 1;
-      final key = _id.toString();
+      id += 1;
+      final key = id.toString();
       newMarkers[key] = Marker(
         markerId: MarkerId(key),
         position: LatLng(stop.lat, stop.lng),
         draggable: widget.isModified,
+        icon: await BitmapDescriptor.asset(
+          ImageConfiguration(),
+          'assets/blue_marker.png',
+        ),
+        onDragStart: (position) {
+          setState(() {
+            _markers[key] = _markers[key]!.copyWith(
+              iconParam: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueAzure,
+              ),
+            );
+          });
+          // debugPrint('Drag started at: $position');
+        },
       );
-      // print('Created marker $key at (${stop.lng}, ${stop.lat})');
     }
 
     setState(() {
@@ -38,10 +58,18 @@ class _GoogleMapsState extends State<GoogleMaps> {
   }
 
   @override
+  void didUpdateWidget(covariant GoogleMaps oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isModified != widget.isModified) {
+      buildMarkers();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: GoogleMap(
-        onMapCreated: _onMapCreated(),
+        onMapCreated: _onMapCreated,
 
         initialCameraPosition: CameraPosition(
           target: LatLng(30.622405, -96.353055),
