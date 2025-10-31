@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_app/locations.dart' as locations;
+import 'package:widget_to_marker/widget_to_marker.dart';
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
@@ -25,6 +26,10 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   Future<void> buildMarkers() async {
     final newMarkers = <String, Marker>{};
+    final assetBitmap = await BitmapDescriptor.asset(
+      const ImageConfiguration(size: Size(27, 40)),
+      'assets/blue_marker.png',
+    );
 
     for (final stop in stops) {
       id += 1;
@@ -33,19 +38,27 @@ class _GoogleMapsState extends State<GoogleMaps> {
         markerId: MarkerId(key),
         position: LatLng(stop.lat, stop.lng),
         draggable: widget.isModified,
-        icon: await BitmapDescriptor.asset(
-          ImageConfiguration(),
-          'assets/blue_marker.png',
-        ),
         onDragStart: (position) {
           setState(() {
-            _markers[key] = _markers[key]!.copyWith(
-              iconParam: BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueAzure,
-              ),
-            );
+            _markers[key] = _markers[key]!.copyWith(iconParam: assetBitmap);
           });
           // debugPrint('Drag started at: $position');
+        },
+        onDrag: (position) {
+          setState(() {
+            _markers[key] = _markers[key]!.copyWith(
+              iconParam: assetBitmap,
+              // positionParam: LatLng(position.latitude, position.longitude),
+            );
+          });
+        },
+        onDragEnd: (position) {
+          setState(() {
+            _markers[key] = _markers[key]!.copyWith(
+              positionParam: LatLng(position.latitude, position.longitude),
+              iconParam: BitmapDescriptor.defaultMarker,
+            );
+          });
         },
       );
     }

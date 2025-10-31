@@ -46,6 +46,7 @@ dependencies:
   google_places_flutter: ^2.1.1
   flutter_map_geojson: ^1.0.8
   collection: ^1.19.1
+  widget_to_marker: ^1.0.6
 
 dev_dependencies:
   flutter_test:
