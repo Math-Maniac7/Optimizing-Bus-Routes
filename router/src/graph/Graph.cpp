@@ -216,6 +216,10 @@ Graph* Graph::parse(json& j) {
     g->osm_ways = osm_ways;
     g->nodes = nodes;
     g->adj = adj;
+    g->dist_walk = std::vector<std::vector<ld>>(nodes.size());
+    g->dist_drive = std::vector<std::vector<ld>>(nodes.size());
+    g->prev_walk = std::vector<std::vector<int>>(nodes.size());
+    g->prev_drive = std::vector<std::vector<int>>(nodes.size());
 
     return g;
 }
@@ -260,44 +264,82 @@ void Graph::sssp(int start, bool walkable, std::vector<ld>& d, std::vector<int>&
     }
 }
 
+ld Graph::get_dist(int start, int end, bool walkable) {
+    int n = nodes.size();
+    
+    //start and end must refer to valid nodes
+    assert(0 <= start && start < n);
+    assert(0 <= end && end < n);
+
+    if(walkable) {
+        //check if we need to run sssp on start 
+        if(this->dist_walk[start].size() == 0) {
+            this->sssp(start, walkable, this->dist_walk[start], this->prev_walk[start]);
+        }
+        return this->dist_walk[start][end];
+    }
+    else {
+        //check if we need to run sssp on start 
+        if(this->dist_drive[start].size() == 0) {
+            this->sssp(start, walkable, this->dist_drive[start], this->prev_drive[start]);
+        }
+        return this->dist_drive[start][end];
+    }
+}
+
 //takes in start and ending node, returns a vector of path indices. 
-std::vector<int> Graph::get_path(int start, int end, bool walkable, ld& out_dist) {
-    std::vector<ld> d;
-    std::vector<int> p;
+std::vector<int> Graph::get_path(int start, int end, bool walkable) {
     int n = nodes.size();
 
     //start and end must refer to valid nodes
     assert(0 <= start && start < n);
     assert(0 <= end && end < n);
 
-    this->sssp(start, walkable, d, p);
+    std::vector<int> path;
+    if(walkable) {
+        //check if we need to run sssp on start 
+        if(this->dist_walk[start].size() == 0) {
+            this->sssp(start, walkable, this->dist_walk[start], this->prev_walk[start]);
+        }
 
-    //check if a path exists
-    if(p[end] == -1) {
-        throw std::runtime_error("Graph::get_path() : path does not exist");
+        //check if a path exists
+        if(this->prev_walk[start][end] == -1) {
+            throw std::runtime_error("Graph::get_path() : path does not exist");
+        }
+        assert(this->dist_walk[start][end] != 1e18);
+
+        //generate path
+        int ptr = end;
+        while(ptr != -1) {
+            path.push_back(ptr);
+            ptr = this->prev_walk[start][ptr];
+        }
+        std::reverse(path.begin(), path.end());
     }
-    assert(d[end] != 1e18);
+    else {
+        //check if we need to run sssp on start 
+        if(this->dist_drive[start].size() == 0) {
+            this->sssp(start, walkable, this->dist_drive[start], this->prev_drive[start]);
+        }
 
-    //generate path
-    int ptr = end;
-    std::vector<int> ans;
-    while(ptr != -1) {
-        ans.push_back(ptr);
-        ptr = p[ptr];
+        //check if a path exists
+        if(this->prev_drive[start][end] == -1) {
+            throw std::runtime_error("Graph::get_path() : path does not exist");
+        }
+        assert(this->dist_drive[start][end] != 1e18);
+
+        //generate path
+        int ptr = end;
+        while(ptr != -1) {
+            path.push_back(ptr);
+            ptr = this->prev_drive[start][ptr];
+        }
+        std::reverse(path.begin(), path.end());
     }
-    std::reverse(ans.begin(), ans.end());
-    assert(ans.size() >= 1);
-    assert(ans[0] == start && ans[ans.size() - 1] == end);
 
-    //out_dist
-    out_dist = d[end];
-
-    return ans;
-}
-
-std::vector<int> Graph::get_path(int start, int end, bool walkable) {
-    ld out_dist;
-    return get_path(start, end, walkable, out_dist);
+    assert(path.size() >= 1);
+    assert(path[0] == start && path[path.size() - 1] == end);
+    return path;
 }
 
 

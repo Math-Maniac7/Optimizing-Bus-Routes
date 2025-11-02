@@ -4,6 +4,7 @@
 #include <random>
 #include <ctime>
 #include "../utils.h"
+#include "../algorithm/mcmf.h"
 
 BRP::BRP(
     Coordinate* _school, 
@@ -535,24 +536,101 @@ on allowing for overbooking buses
 
 */
 
+
 void BRP::do_p2() {
     assert(this->stops.has_value());
+    int N = this->stops.value().size();
+    int M = this->buses.size();
 
-    //for now, just assign all stops to one bus
-    this->assignments = std::vector<BusStopAssignment*>();
-    assert(this->buses.size() >= 1);
-    {
-        std::set<bsid_t> stops;
-        for(int i = 0; i < this->stops.value().size(); i++) {
-            stops.insert(this->stops.value()[i]->id);
+    Graph* graph = this->create_graph();
+
+    //initialize bus cluster centers
+    //a bus cluster center should always fall on a graph node
+    std::vector<int> cluster_centers(M, -1);
+    for(int i = 0; i < M; i++) {
+        //for now, just assign bus to random stop
+        int stop_ind = random() % N;
+        int graph_ind = graph->get_node(this->stops.value()[stop_ind]->pos, false);
+        cluster_centers[i] = graph_ind;
+    }
+
+    //iterate
+    std::vector<ld> stop_weights(N), bus_capacities(M);
+    for(int i = 0; i < N; i++) {
+        stop_weights[i] = this->stops.value()[i]->students.size();
+    }
+    for(int i = 0; i < M; i++) {
+        bus_capacities[i] = this->buses[i]->capacity;
+    }
+    std::vector<int> stop_graph_nodes(N);
+    for(int i = 0; i < N; i++) {
+        stop_graph_nodes[i] = graph->get_node(this->stops.value()[i]->pos, false);
+    }
+    std::vector<int> assignment;
+    for(int _ = 0; _ < 10; _++) {
+        //compute assignment costs
+        std::vector<std::vector<ld>> cost(N, std::vector<ld>(M));
+        for(int i = 0; i < N; i++) {
+            for(int j = 0; j < M; j++) {
+                cost[i][j] = graph->get_dist(stop_graph_nodes[i], cluster_centers[j], false);
+            }
         }
-        this->assignments.value().push_back(new BusStopAssignment(0, this->buses[0]->id, stops));
+
+        //get mcmf assignment
+        assignment = mcmf::calc_assignment(stop_weights, cost, bus_capacities);
+        
+        //recompute centers as euclidean average of stop centers
+        std::vector<std::pair<ld, ld>> sum(M, {0, 0});
+        std::vector<ld> amt(M, 0);
+        for(int i = 0; i < N; i++) {
+            Coordinate* pos = this->stops.value()[i]->pos;
+            sum[assignment[i]].first += pos->lat;
+            sum[assignment[i]].second += pos->lon;
+            amt[assignment[i]] ++;
+        }
+        for(int i = 0; i < M; i++) {
+            if(amt[i] == 0) {
+                assert(false);
+            }
+            sum[i].first /= amt[i];
+            sum[i].second /= amt[i];
+            Coordinate* npos = new Coordinate(sum[i].first, sum[i].second);
+            int graph_ind = graph->get_node(npos, false);
+            cluster_centers[i] = graph_ind;
+        }
     }
 
-    for(int i = 1; i < this->buses.size(); i++) {
-        this->assignments.value().push_back(new BusStopAssignment(i, this->buses[i]->id, {}));
+    //construct assignments
+    std::vector<BusStopAssignment*> assignments(M);
+    for(int i = 0; i < M; i++) {
+        assignments[i] = new BusStopAssignment(i, this->buses[i]->id, {});
     }
+    for(int i = 0; i < N; i++) {
+        assert(assignment[i] != -1);
+        assignments[assignment[i]]->stops.insert(this->stops.value()[i]->id);
+    }
+
+    this->assignments = assignments;
 }
+
+// void BRP::do_p2() {
+//     assert(this->stops.has_value());
+
+//     //for now, just assign all stops to one bus
+//     this->assignments = std::vector<BusStopAssignment*>();
+//     assert(this->buses.size() >= 1);
+//     {
+//         std::set<bsid_t> stops;
+//         for(int i = 0; i < this->stops.value().size(); i++) {
+//             stops.insert(this->stops.value()[i]->id);
+//         }
+//         this->assignments.value().push_back(new BusStopAssignment(0, this->buses[0]->id, stops));
+//     }
+
+//     for(int i = 1; i < this->buses.size(); i++) {
+//         this->assignments.value().push_back(new BusStopAssignment(i, this->buses[i]->id, {}));
+//     }
+// }
 
 void BRP::do_p3() {
     assert(this->stops.has_value());
