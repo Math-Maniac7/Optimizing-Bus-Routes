@@ -154,16 +154,29 @@ BRP* BRP::make_copy() {
     );
 }
 
+std::string rand_hex_color(std::mt19937 &rng) {
+    std::uniform_int_distribution<int> dist(64, 224); // avoid too dark or bright
+    auto comp_to_hex = [](int x) {
+        std::ostringstream oss;
+        oss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << x;
+        return oss.str();
+    };
+    int r = dist(rng), g = dist(rng), b = dist(rng);
+    return "#" + comp_to_hex(r) + comp_to_hex(g) + comp_to_hex(b);
+}
+
 json BRP::to_geojson() {
     json features = json::array();
     Graph* graph = this->create_graph();
+    std::mt19937 rng(std::random_device{}());
 
     //school
     {
         json feature = {
             {"type", "Feature"},
             {"properties", {
-                {"name", "school"}
+                {"name", "school"},
+                {"marker-size", "medium"}
             }},
             {"geometry", {
                 {"type", "Point"},
@@ -174,7 +187,7 @@ json BRP::to_geojson() {
     }
     
     //bus stops
-    if(this->stops.has_value()) {
+    if(this->stops.has_value() && !this->assignments.has_value()) {
         for(int i = 0; i < this->stops.value().size(); i++) {
             BusStop *stop = this->stops.value()[i];
             Coordinate *pos = stop->pos;
@@ -191,6 +204,35 @@ json BRP::to_geojson() {
                 }}
             };
             features.push_back(feature);
+        }
+    }
+
+    //bus assignments
+    if(!this->routes.has_value() && this->assignments.has_value()) {
+        assert(this->stops.has_value());
+        for(int i = 0; i < this->assignments.value().size(); i++) {
+            BusStopAssignment *assignment = this->assignments.value()[i];
+            std::string color = rand_hex_color(rng);
+
+            for(auto j : assignment->stops) {
+                BusStop *stop = this->get_stop(j);
+                Coordinate * pos = stop->pos;
+                json feature = {
+                    {"type", "Feature"},
+                    {"properties", {
+                        {"name", "stop " + std::to_string(stop->id)},
+                        {"marker-size", "small"},
+                        {"marker-color", color}
+                    }},
+                    {"geometry", {
+                        {"type", "Point"},
+                        {"coordinates", {pos->lon, pos->lat}}
+                    }}
+                };
+                features.push_back(feature);
+            }
+            json coords = json::array();
+
         }
     }
     
@@ -533,16 +575,15 @@ on allowing for overbooking buses
  - one set of edges from (buses) -> (sink) should reflect the base capacity of each bus, with 0 cost
  - can allow for overbooking by adding another set of edges with high capacity and high cost. 
  - if overflow is unacceptable, can have ghost bus with extremely high cost. Unmet demand will be assigned there
-
 */
-
-
 void BRP::do_p2() {
     assert(this->stops.has_value());
     int N = this->stops.value().size();
     int M = this->buses.size();
 
+    std::cout << "GETTING GRAPH" << std::endl;
     Graph* graph = this->create_graph();
+    std::cout << "DONE GETTING GRAPH" << std::endl;
 
     //initialize bus cluster centers
     //a bus cluster center should always fall on a graph node
@@ -567,7 +608,9 @@ void BRP::do_p2() {
         stop_graph_nodes[i] = graph->get_node(this->stops.value()[i]->pos, false);
     }
     std::vector<int> assignment;
-    for(int _ = 0; _ < 10; _++) {
+    for(int _ = 0; _ < 50; _++) {
+        std::cout << "ITERATION : " << _ << std::endl;
+
         //compute assignment costs
         std::vector<std::vector<ld>> cost(N, std::vector<ld>(M));
         for(int i = 0; i < N; i++) {
@@ -575,9 +618,15 @@ void BRP::do_p2() {
                 cost[i][j] = graph->get_dist(stop_graph_nodes[i], cluster_centers[j], false);
             }
         }
+        std::cout << "COMPUTED COSTS : " << N << " " << M << " " << N * M << std::endl;
 
         //get mcmf assignment
         assignment = mcmf::calc_assignment(stop_weights, cost, bus_capacities);
+        std::cout << "DONE MCMF" << std::endl;
+        for(int i = 0; i < assignment.size(); i++) {
+            std::cout << assignment[i] << " ";
+        }
+        std::cout << "\n";
         
         //recompute centers as euclidean average of stop centers
         std::vector<std::pair<ld, ld>> sum(M, {0, 0});
@@ -590,13 +639,19 @@ void BRP::do_p2() {
         }
         for(int i = 0; i < M; i++) {
             if(amt[i] == 0) {
-                assert(false);
+                std::cout << "NOTHING ASSIGNED TO BUS : " << i << std::endl;
+                //randomly reassign to another stop
+                int stop_ind = random() % N;
+                int graph_ind = graph->get_node(this->stops.value()[stop_ind]->pos, false);
+                cluster_centers[i] = graph_ind;
             }
-            sum[i].first /= amt[i];
-            sum[i].second /= amt[i];
-            Coordinate* npos = new Coordinate(sum[i].first, sum[i].second);
-            int graph_ind = graph->get_node(npos, false);
-            cluster_centers[i] = graph_ind;
+            else {
+                sum[i].first /= amt[i];
+                sum[i].second /= amt[i];
+                Coordinate* npos = new Coordinate(sum[i].first, sum[i].second);
+                int graph_ind = graph->get_node(npos, false);
+                cluster_centers[i] = graph_ind;
+            }
         }
     }
 

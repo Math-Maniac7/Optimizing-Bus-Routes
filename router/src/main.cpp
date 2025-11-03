@@ -297,6 +297,7 @@ int main(int argc, char* argv[]) {
 
     //solve BRP
     try {
+        std::cout << "SOLVING BRP : " << type << std::endl;
         if(type == "p1") {
             brp->do_p1();
         } 

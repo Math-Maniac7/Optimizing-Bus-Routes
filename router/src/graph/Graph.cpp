@@ -229,6 +229,7 @@ Graph* Graph::parse(json& j) {
 // - factor in speed limit
 // - use A* instead of dijkstra
 void Graph::sssp(int start, bool walkable, std::vector<ld>& d, std::vector<int>& p) {
+    std::cout << "RUN SSSP : " << start << std::endl;
     int n = nodes.size();
 
     //start must refer to a valid node

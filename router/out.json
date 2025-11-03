@@ -1,0 +1,13 @@
+DONE PARSING JSON
+DONE PARSING BRP
+DONE VALIDATING INPUT
+SOLVING BRP : p2
+GETTING GRAPH
+QUERY : [out:json][timeout:25];(way["highway"]["area"!="yes"]["highway"!="construction"]["highway"!="proposed"](30.377302,-97.878263,30.535001,-97.717337););(._;>;);out body;
+TYPES :
+node
+way
+GRAPH : 232934
+DONE GETTING GRAPH
+ITERATION : 0
+COMPUTED COSTS : 276 10 2760

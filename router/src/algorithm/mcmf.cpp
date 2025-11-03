@@ -3,15 +3,17 @@
 #include <queue>
 #include <vector>
 #include <algorithm>
+#include <iostream>
 
 namespace mcmf {
     using namespace std;
 
-    const ld INF = 1e18;
+    const ll INF = 1e18;
     struct MCMF {
+
         struct Edge {
             int v, isback;
-            ld cap, flow, cost;
+            ll cap, flow, cost;
         };
 
         int n;
@@ -19,11 +21,11 @@ namespace mcmf {
         vector<vector<int>> adj;
         vector<pair<int, int>> par;
         vector<int> in_q;
-        vector<ld> dist, pi;
+        vector<ll> dist, pi;
 
         MCMF(int n) : n(n), adj(n), dist(n), pi(n), par(n), in_q(n) {}
 
-        void addEdge(int u, int v, ld cap, ld cost) {
+        void addEdge(int u, int v, ll cap, ll cost) {
             int idx = edges.size();
             edges.push_back({v, 0, cap, 0, cost});
             edges.push_back({u, 1, cap, cap, -cost});
@@ -47,8 +49,8 @@ namespace mcmf {
                 for (int idx : adj[cur]) {
                     Edge& e = edges[idx];
                     int nxt = e.v;
-                    ld cap = e.cap, fl = e.flow, wt = e.cost;
-                    ld nxtD = dist[cur] + wt;
+                    ll cap = e.cap, fl = e.flow, wt = e.cost;
+                    ll nxtD = dist[cur] + wt;
 
                     if (fl >= cap || nxtD >= dist[nxt]) continue;
 
@@ -64,15 +66,15 @@ namespace mcmf {
             return dist[t] < INF;
         }
 
-        pair<ld, ld> calc(int s, int t) {
-            ld flow = 0, cost = 0;
+        pair<ll, ll> calc(int s, int t) {
+            ll flow = 0, cost = 0;
 
             while (find_path(s, t)) {
                 for (int i = 0; i < n; i++) {
                     pi[i] = min(pi[i] + dist[i], INF);
                 }
 
-                ld f = INF;
+                ll f = INF;
                 for (int v = t, u, i; v != s; v = u) {
                     tie(u, i) = par[v];
                     f = min(f, edges[i].cap - edges[i].flow);
@@ -118,19 +120,23 @@ namespace mcmf {
 
         MCMF mcmf(indptr);
         for(int i = 0; i < N; i++) {
-            mcmf.addEdge(source, stops[i], weights[i], 0);
+            mcmf.addEdge(source, stops[i], (ll) (weights[i] * 10.0), 0);
         }
         for(int i = 0; i < N; i++) {
             for(int j = 0; j < M; j++) {
-                mcmf.addEdge(stops[i], buses[j], INF, costs[i][j]);
+                mcmf.addEdge(stops[i], buses[j], INF, (ll) (costs[i][j] * 10.0));
             }
         }
         for(int i = 0; i < M; i++) {
-            mcmf.addEdge(buses[i], sink, capacities[i], 0);
+            mcmf.addEdge(buses[i], sink, (ll) (capacities[i] * 10.0), 0);
         }
+
+        cout << "DONE SETUP GRAPH" << endl;
 
         //do mcmf
         pair<ld, ld> res = mcmf.calc(source, sink);
+
+        cout << "DONE MCMF" << endl;
 
         //extract results
         vector<int> ans(N, -1);
