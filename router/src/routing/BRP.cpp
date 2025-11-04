@@ -5,6 +5,7 @@
 #include <ctime>
 #include "../utils.h"
 #include "../algorithm/mcmf.h"
+#include "../algorithm/dbscan.h"
 
 BRP::BRP(
     Coordinate* _school, 
@@ -493,7 +494,7 @@ Graph* BRP::create_graph() {
     this->graph = utils::create_graph(min_lat, min_lon, max_lat, max_lon);
     return this->graph;
 }
-
+/*
 void BRP::do_p1() {
     //for now, just assign each student to their own bus stop
     this->stops = std::vector<BusStop*>();
@@ -502,7 +503,25 @@ void BRP::do_p1() {
         this->stops.value().push_back(new BusStop(i, s->pos->make_copy(), {s->id}));
     }
 }
+*/
+void BRP::do_p1() {
+    // Build the road graph
+    Graph* graph = this->create_graph();
 
+    // Configure the simple DBSCAN
+    dbscan::Params P;
+    P.eps           = 70.0; 
+    P.min_pts       = 3;
+    P.cap           = 10;
+    P.assign_radius = 60.0;
+    P.max_walk      = 90.0;
+    P.near_ratio    = 0.6;
+    P.near_k        = 2;
+    P.solo_mult     = 1.5;
+
+    // Run the clustering
+    this->stops = dbscan::run(this->students, graph, P);
+}
 /*
 NOTES FOR PHASE 2
 
