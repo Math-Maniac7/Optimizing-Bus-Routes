@@ -19,6 +19,28 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
   bool _isProcessing = false;
   String? _errorMessage;
   String? _successMessage;
+  List<Map<String, dynamic>> _buses = [
+    {'id': 0, 'capacity': 100}
+  ]; // List of buses with id and capacity
+  final List<TextEditingController> _busCapacityControllers = [];
+  final ScrollController _busListScrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize controller for the default bus
+    _busCapacityControllers.add(TextEditingController(text: '100'));
+  }
+
+  @override
+  void dispose() {
+    // Dispose all controllers
+    for (var controller in _busCapacityControllers) {
+      controller.dispose();
+    }
+    _busListScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +48,9 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
       child: Container(
         width: MediaQuery.of(context).size.width * 0.8,
         padding: const EdgeInsets.all(16.0),
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header with close button
@@ -69,6 +93,52 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                 label: const Text('Choose CSV File'),
               ),
             ),
+            const SizedBox(height: 24),
+            
+            // Bus Management Section
+            const Divider(),
+            const SizedBox(height: 8),
+            const Text(
+              'Bus Configuration',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Add buses and set their capacity',
+              style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
+            ),
+            const SizedBox(height: 12),
+            
+            // Bus list
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.3,
+              ),
+              child: ListView.builder(
+                controller: _busListScrollController,
+                shrinkWrap: true,
+                itemCount: _buses.length,
+                itemBuilder: (context, index) {
+                  return _buildBusItem(index);
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            
+            // Add bus button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _addBus,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Bus'),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
             const SizedBox(height: 16),
             
             // Processing indicator
@@ -115,7 +185,7 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                 ),
               ),
             
-            const Spacer(),
+            const SizedBox(height: 24),
             
             // Process button
             if (_csvContent != null && !_isProcessing)
@@ -152,10 +222,90 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                   ),
                 ),
               ),
+            
+            const SizedBox(height: 16), // Bottom padding for scrollable content
           ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildBusItem(int index) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          // Bus ID label
+          Text(
+            'Bus ${_buses[index]['id']}:',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Capacity input
+          Expanded(
+            child: TextField(
+              controller: _busCapacityControllers[index],
+              decoration: const InputDecoration(
+                labelText: 'Capacity',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              keyboardType: TextInputType.number,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Remove button (disabled if only one bus)
+          IconButton(
+            onPressed: _buses.length > 1 ? () => _removeBus(index) : null,
+            icon: const Icon(Icons.delete),
+            color: Colors.red,
+            tooltip: _buses.length > 1 ? 'Remove bus' : 'At least one bus required',
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addBus() {
+    setState(() {
+      final newId = _buses.length; // Auto-increment ID
+      _buses.add({'id': newId, 'capacity': 50}); // Default capacity of 50
+      _busCapacityControllers.add(TextEditingController(text: '50'));
+    });
+    
+    // Scroll to the bottom to show the newly added bus
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_busListScrollController.hasClients) {
+        _busListScrollController.animateTo(
+          _busListScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _removeBus(int index) {
+    if (_buses.length <= 1) return; // Prevent removing the last bus
+    
+    setState(() {
+      _busCapacityControllers[index].dispose();
+      _busCapacityControllers.removeAt(index);
+      _buses.removeAt(index);
+      // Reassign IDs to maintain sequential order starting from 0
+      for (int i = 0; i < _buses.length; i++) {
+        _buses[i]['id'] = i;
+      }
+    });
   }
 
   Future<void> _pickFile() async {
@@ -235,6 +385,21 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
     try {
       print('DEBUG: Starting CSV processing...');
       
+      // Validate buses
+      if (_buses.isEmpty) {
+        throw Exception('At least one bus is required');
+      }
+      
+      // Update bus capacities from controllers
+      for (int i = 0; i < _buses.length; i++) {
+        final capacityText = _busCapacityControllers[i].text.trim();
+        final capacity = int.tryParse(capacityText);
+        if (capacity == null || capacity <= 0) {
+          throw Exception('Bus $i capacity must be a positive number');
+        }
+        _buses[i]['capacity'] = capacity;
+      }
+      
       // Parse CSV
       final locations = CsvParser.parseCsv(_csvContent!);
       print('DEBUG: Parsed ${locations.length} locations from CSV');
@@ -248,8 +413,8 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
       final coordinates = await GeocodingService.geocodeAddresses(addresses);
       print('DEBUG: Geocoding completed. Got ${coordinates.length} results');
       
-      // Generate JSON with coordinates
-      final jsonData = CsvParser.generateJson(locations);
+      // Generate JSON with coordinates and buses
+      final jsonData = CsvParser.generateJson(locations, buses: _buses);
       
       // Update coordinates in JSON
       int coordIndex = 0;

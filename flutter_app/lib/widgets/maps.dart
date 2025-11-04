@@ -5,8 +5,13 @@ import 'package:widget_to_marker/widget_to_marker.dart';
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
+  final bool interactionEnabled;
 
-  const GoogleMaps({super.key, required this.isModified});
+  const GoogleMaps({
+    super.key,
+    required this.isModified,
+    this.interactionEnabled = true,
+  });
 
   @override
   State<GoogleMaps> createState() => _GoogleMapsState();
@@ -83,12 +88,21 @@ class _GoogleMapsState extends State<GoogleMaps> {
     return Scaffold(
       body: GoogleMap(
         onMapCreated: _onMapCreated,
-
         initialCameraPosition: CameraPosition(
           target: LatLng(30.622405, -96.353055),
           zoom: 15,
         ),
         markers: _markers.values.toSet(),
+        scrollGesturesEnabled: widget.interactionEnabled,
+        zoomGesturesEnabled: widget.interactionEnabled,
+        tiltGesturesEnabled: widget.interactionEnabled,
+        rotateGesturesEnabled: widget.interactionEnabled,
+        zoomControlsEnabled: widget.interactionEnabled,
+        myLocationButtonEnabled: widget.interactionEnabled,
+        mapToolbarEnabled: widget.interactionEnabled,
+        onTap: widget.interactionEnabled ? null : (_) {
+          // Ignore taps when interactions are disabled
+        },
       ),
     );
   }

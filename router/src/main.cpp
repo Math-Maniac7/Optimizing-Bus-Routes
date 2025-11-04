@@ -149,7 +149,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
     }
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 
-    json output = brp->to_geojson();
+    json output = brp->to_json();
     std::string output_str = to_string(output);
 
     //char* cstr = (char*) malloc(output_str.size());
