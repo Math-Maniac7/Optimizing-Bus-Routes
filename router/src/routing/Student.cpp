@@ -14,6 +14,13 @@ Student* Student::parse(json& j) {
     return new Student(id, pos);
 }
 
+json Student::to_json() {
+    json ret;
+    ret["id"] = this->id;
+    ret["pos"] = this->pos->to_json();
+    return ret;
+}
+
 Student* Student::make_copy() {
     return new Student(id, pos->make_copy());
 }

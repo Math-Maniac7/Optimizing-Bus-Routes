@@ -6,5 +6,6 @@ struct Coordinate {
     Coordinate(ld _lat, ld _lon);
 
     static Coordinate* parse(json& j);
+    json to_json();
     Coordinate* make_copy();
 };

@@ -72,14 +72,18 @@ struct Graph {
     std::vector<Node*> nodes;
     std::vector<std::vector<Edge*>> adj;
 
+    std::vector<std::vector<ld>> dist_walk, dist_drive;
+    std::vector<std::vector<int>> prev_walk, prev_drive;
+
     Graph() {}
     static Graph* parse(json& j);
 
     //single source shortest paths
     void sssp(int start, bool walkable, std::vector<ld>& out_dist, std::vector<int>& out_prev);
 
-    //returns nodes on path from start to end node
-    std::vector<int> get_path(int start, int end, bool walkable, ld& out_dist);
+    ld get_dist(int start, int end, bool walkable);
+
+    //returns nodes on path from start to end node, including the start and end
     std::vector<int> get_path(int start, int end, bool walkable);
 
     //given some information, returns the node in graph that best matches it

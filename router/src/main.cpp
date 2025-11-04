@@ -5,15 +5,15 @@
 #include <map>
 #include <fstream>
 #include <cstdio>
-#include <format>
+//#include <format>
 #include <iomanip>
 #include <unistd.h> 
-#include <sys/wait.h>
-#include <curl/curl.h>
+//#include <sys/wait.h>
+//#include <curl/curl.h>
 
 #include "defs.h"
 #include "graph/Graph.h"
-#include "http/http.h"
+//#include "http/http.h"
 #include "routing/BRP.h"
 #include "utils.h"
 
@@ -97,10 +97,141 @@ void do_test() {
     std::cout << geojson << "\n";
 }
 
+BRP* parse_brp(char* json_str) {
+    std::string str(json_str);
+    json input = json::parse(str);
+
+    //try to parse json into BRP and validate
+    BRP* brp;
+    try {
+        brp = BRP::parse(input);
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP parse error : " << e.what() << "\n";
+        return nullptr;
+    }
+    std::cout << "DONE PARSING BRP" << std::endl;
+
+    //validate BRP
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return nullptr;
+    }
+    std::cout << "DONE VALIDATING INPUT" << std::endl;
+
+    return brp;
+}
+
+#if _ISWASM
+
+extern EMSCRIPTEN_KEEPALIVE char* json_out_to_C_string(char** json_out){
+    return *json_out;
+}
+
+extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
+    *json_out = 0;
+    BRP* brp = parse_brp(json_str);
+    if(brp == nullptr) {
+        return "error parsing/validating brp";
+    }
+    brp->do_p1();
+
+    //validate before we output
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return "error validating output";
+    }
+    std::cout << "DONE VALIDATING OUTPUT" << std::endl;
+
+    json output = brp->to_geojson();
+    std::string output_str = to_string(output);
+
+    //char* cstr = (char*) malloc(output_str.size());
+    //memcpy(cstr, output_str.c_str(), output_str.size());
+    char* cstr = (char*) malloc(output_str.size() + 1); // +1 for '\0'
+    memcpy(cstr, output_str.c_str(), output_str.size());
+    cstr[output_str.size()] = '\0';
+    *json_out = cstr;
+    return cstr;
+}
+
+extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str) {
+    BRP* brp = parse_brp(json_str);
+    if(brp == nullptr) {
+        return "error parsing/validating brp";
+    }
+    brp->do_p2();
+
+    //validate before we output
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return "error validating output";
+    }
+    std::cout << "DONE VALIDATING OUTPUT" << std::endl;
+
+    json output = brp->to_geojson();
+    std::string output_str = to_string(output);
+
+    char* cstr = (char*) malloc(output_str.size());
+    memcpy(cstr, output_str.c_str(), output_str.size());
+    return cstr;
+}
+
+extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str) {
+    BRP* brp = parse_brp(json_str);
+    if(brp == nullptr) {
+        return "error parsing/validating brp";
+    }
+    brp->do_p3();
+
+    //validate before we output
+    try {
+        brp->validate();
+    }
+    catch(const std::runtime_error e) {
+        std::cout << "BRP validation error : " << e.what() << "\n";
+        return "error validating output";
+    }
+    std::cout << "DONE VALIDATING OUTPUT" << std::endl;
+
+    json output = brp->to_geojson();
+    std::string output_str = to_string(output);
+
+    char* cstr = (char*) malloc(output_str.size());
+    memcpy(cstr, output_str.c_str(), output_str.size());
+    return cstr;
+}
+
+/*
+int main(){
+    std::cout  << "Prove something works";
+
+    const char* input = "{\"school\":{\"lat\":30.455773,\"lon\":-97.798242},\"bus_yard\":{\"lat\":30.455773,\"lon\":-97.798242},\"students\":[{\"id\":0,\"pos\":{\"lat\":30.4524471,\"lon\":-97.8115005}},{\"id\":1,\"pos\":{\"lat\":30.4427579,\"lon\":-97.8028133}},{\"id\":2,\"pos\":{\"lat\":30.4423536,\"lon\":-97.808608}},{\"id\":3,\"pos\":{\"lat\":30.4475907,\"lon\":-97.8188957}},{\"id\":4,\"pos\":{\"lat\":30.4543126,\"lon\":-97.8183026}}],\"buses\":[{\"id\":0,\"capacity\":100}],\"stops\":[{\"id\":0,\"pos\":{\"lat\":30.4524471,\"lon\":-97.8115005},\"students\":[0]},{\"id\":1,\"pos\":{\"lat\":30.4427579,\"lon\":-97.8028133},\"students\":[1]},{\"id\":2,\"pos\":{\"lat\":30.4423536,\"lon\":-97.808608},\"students\":[2]},{\"id\":3,\"pos\":{\"lat\":30.4475907,\"lon\":-97.8188957},\"students\":[3]},{\"id\":4,\"pos\":{\"lat\":30.4543126,\"lon\":-97.8183026},\"students\":[4]}],\"assignments\":[{\"id\":0,\"bus\":0,\"stops\":[0,1,2,3,4]}]}";
+    
+    char* err = (char*) malloc(strlen(input) + 1);
+    strcpy(err, input);
+
+    char* out = do_p1(err);
+    std::cout << out;
+    std::cout << "done" << std::endl;
+}*/
+
+#else
+
 int main(int argc, char* argv[]) {
-    if(argc != 3) {
+    if(argc < 3) {
         std::cout << "Usage : \n";
         std::cout << "<p1 | p2 | p3> <in_file>\n";  //TODO add <out_file>
+        std::cout << "-geojson : returns a geojson representation of the resulting BRP\n";
         return 1;
     }
 
@@ -129,6 +260,20 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "DONE PARSING JSON" << std::endl;
 
+    //parse other flags
+    bool to_geojson = false;
+    int argptr = 3;
+    while(argptr != argc) {
+        std::string next(argv[argptr ++]);
+        if(next == "-geojson") {
+            to_geojson = true;
+        }
+        else {
+            std::cout << "Unknown flag : " + next << "\n";
+            return 1;
+        }
+    }
+
     //try to parse json into BRP and validate
     BRP* brp;
     try {
@@ -152,6 +297,7 @@ int main(int argc, char* argv[]) {
 
     //solve BRP
     try {
+        std::cout << "SOLVING BRP : " << type << std::endl;
         if(type == "p1") {
             brp->do_p1();
         } 
@@ -182,8 +328,16 @@ int main(int argc, char* argv[]) {
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 
     //convert BRP to json and output
-    json output = brp->to_geojson();
+    json output;
+    if(to_geojson) {
+        output = brp->to_geojson();
+    }
+    else {
+        output = brp->to_json();
+    }
     std::cout << output << "\n";
 
     return 0;
 }
+
+#endif

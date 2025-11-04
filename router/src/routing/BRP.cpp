@@ -1,6 +1,10 @@
 #include "BRP.h"
 #include <set>
+#include <algorithm>
+#include <random>
+#include <ctime>
 #include "../utils.h"
+#include "../algorithm/mcmf.h"
 
 BRP::BRP(
     Coordinate* _school, 
@@ -74,6 +78,48 @@ BRP* BRP::parse(json& j) {
     );
 }
 
+json BRP::to_json() {
+    json ret;
+    ret["school"] = this->school->to_json();
+    ret["bus_yard"] = this->bus_yard->to_json();
+    std::vector<json> students_json;
+    for(int i = 0; i < this->students.size(); i++) {
+        students_json.push_back(this->students[i]->to_json());
+    }
+    ret["students"] = students_json;
+    std::vector<json> buses_json;
+    for(int i = 0; i < this->buses.size(); i++) {
+        buses_json.push_back(this->buses[i]->to_json());
+    }
+    ret["buses"] = buses_json;
+
+    if(this->stops.has_value()) {
+        std::vector<json> stops_json;
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            stops_json.push_back(this->stops.value()[i]->to_json());
+        }
+        ret["stops"] = stops_json;
+    }
+
+    if(this->assignments.has_value()) {
+        std::vector<json> assignments_json;
+        for(int i = 0; i < this->assignments.value().size(); i++) {
+            assignments_json.push_back(this->assignments.value()[i]->to_json());
+        }
+        ret["assignments"] = assignments_json;
+    }
+
+    if(this->routes.has_value()) {
+        std::vector<json> routes_json;
+        for(int i = 0; i < this->routes.value().size(); i++) {
+            routes_json.push_back(this->routes.value()[i]->to_json());
+        }
+        ret["routes"] = routes_json;
+    }
+
+    return ret;
+}
+
 BRP* BRP::make_copy() {
     Coordinate *_school = school->make_copy();
     Coordinate *_bus_yard = bus_yard->make_copy();
@@ -108,20 +154,29 @@ BRP* BRP::make_copy() {
     );
 }
 
-json BRP::to_json() {
-    throw std::runtime_error("BRP::to_json not implemented");
+std::string rand_hex_color(std::mt19937 &rng) {
+    std::uniform_int_distribution<int> dist(64, 224); // avoid too dark or bright
+    auto comp_to_hex = [](int x) {
+        std::ostringstream oss;
+        oss << std::hex << std::uppercase << std::setfill('0') << std::setw(2) << x;
+        return oss.str();
+    };
+    int r = dist(rng), g = dist(rng), b = dist(rng);
+    return "#" + comp_to_hex(r) + comp_to_hex(g) + comp_to_hex(b);
 }
 
 json BRP::to_geojson() {
     json features = json::array();
     Graph* graph = this->create_graph();
+    std::mt19937 rng(std::random_device{}());
 
     //school
     {
         json feature = {
             {"type", "Feature"},
             {"properties", {
-                {"name", "school"}
+                {"name", "school"},
+                {"marker-size", "medium"}
             }},
             {"geometry", {
                 {"type", "Point"},
@@ -132,7 +187,7 @@ json BRP::to_geojson() {
     }
     
     //bus stops
-    if(this->stops.has_value()) {
+    if(this->stops.has_value() && !this->assignments.has_value()) {
         for(int i = 0; i < this->stops.value().size(); i++) {
             BusStop *stop = this->stops.value()[i];
             Coordinate *pos = stop->pos;
@@ -151,6 +206,35 @@ json BRP::to_geojson() {
             features.push_back(feature);
         }
     }
+
+    //bus assignments
+    if(!this->routes.has_value() && this->assignments.has_value()) {
+        assert(this->stops.has_value());
+        for(int i = 0; i < this->assignments.value().size(); i++) {
+            BusStopAssignment *assignment = this->assignments.value()[i];
+            std::string color = rand_hex_color(rng);
+
+            for(auto j : assignment->stops) {
+                BusStop *stop = this->get_stop(j);
+                Coordinate * pos = stop->pos;
+                json feature = {
+                    {"type", "Feature"},
+                    {"properties", {
+                        {"name", "stop " + std::to_string(stop->id)},
+                        {"marker-size", "small"},
+                        {"marker-color", color}
+                    }},
+                    {"geometry", {
+                        {"type", "Point"},
+                        {"coordinates", {pos->lon, pos->lat}}
+                    }}
+                };
+                features.push_back(feature);
+            }
+            json coords = json::array();
+
+        }
+    }
     
     //bus routes
     if(this->routes.has_value()) {
@@ -158,20 +242,9 @@ json BRP::to_geojson() {
             BusRoute *route = this->routes.value()[i];
             json coords = json::array();
 
-            std::vector<int> graph_inds(0);
-            graph_inds.push_back(graph->get_node(this->school, false));
-            for(int j = 0; j < route->stops.size(); j++) {
-                bsid_t stop_id = route->stops[j];
-                BusStop *stop = this->get_stop(stop_id);
-                graph_inds.push_back(graph->get_node(stop->pos, false));
-            }
-            graph_inds.push_back(graph->get_node(this->bus_yard, false));
-
-            for(int j = 0; j < graph_inds.size() - 1; j++) {
-                std::vector<int> path = graph->get_path(graph_inds[j], graph_inds[j + 1], false);
-                for(int x : path) {
-                    Coordinate *pos = graph->nodes[x]->coord;
-                    coords.push_back({pos->lon, pos->lat});
+            for(int j = 0; j < route->paths.size(); j++) {
+                for(int k = 0; k < route->paths[j].size(); k++) {
+                    coords.push_back({route->paths[j][k]->lon, route->paths[j][k]->lat});
                 }
             }
 
@@ -421,6 +494,22 @@ void BRP::validate() {
                 throw std::runtime_error("BRP::validate() : assignment " + std::to_string(id) + " assigned to " + std::to_string(freq) + " routes");
             }
         }
+
+        // - there must be exactly stops.size() + 1 paths in a route
+        //   except if the route has 0 stops, in which case it must have exactly 0 paths
+        for(int i = 0; i < routes.value().size(); i++) {
+            BusRoute *route = this->routes.value()[i];
+            if(route->stops.size() == 0) {
+                if(route->paths.size() != 0) {
+                    throw std::runtime_error("BRP::validate() : route " + std::to_string(route->id) + " does not have the correct amount of paths");
+                }
+            }
+            else {
+                if(route->paths.size() != route->stops.size() + 1) {
+                    throw std::runtime_error("BRP::validate() : route " + std::to_string(route->id) + " does not have the correct amount of paths");
+                }
+            }
+        }
     }
 }
 
@@ -486,37 +575,224 @@ on allowing for overbooking buses
  - one set of edges from (buses) -> (sink) should reflect the base capacity of each bus, with 0 cost
  - can allow for overbooking by adding another set of edges with high capacity and high cost. 
  - if overflow is unacceptable, can have ghost bus with extremely high cost. Unmet demand will be assigned there
-
 */
-
 void BRP::do_p2() {
     assert(this->stops.has_value());
+    int N = this->stops.value().size();
+    int M = this->buses.size();
 
-    //for now, just assign all stops to one bus
-    this->assignments = std::vector<BusStopAssignment*>();
-    assert(this->buses.size() >= 1);
-    {
-        std::set<bsid_t> stops;
-        for(int i = 0; i < this->stops.value().size(); i++) {
-            stops.insert(this->stops.value()[i]->id);
+    std::cout << "GETTING GRAPH" << std::endl;
+    Graph* graph = this->create_graph();
+    std::cout << "DONE GETTING GRAPH" << std::endl;
+
+    //initialize bus cluster centers
+    //a bus cluster center should always fall on a graph node
+    std::vector<int> cluster_centers(M, -1);
+    for(int i = 0; i < M; i++) {
+        //for now, just assign bus to random stop
+        int stop_ind = random() % N;
+        int graph_ind = graph->get_node(this->stops.value()[stop_ind]->pos, false);
+        cluster_centers[i] = graph_ind;
+    }
+
+    //iterate
+    std::vector<ld> stop_weights(N), bus_capacities(M);
+    for(int i = 0; i < N; i++) {
+        stop_weights[i] = this->stops.value()[i]->students.size();
+    }
+    for(int i = 0; i < M; i++) {
+        bus_capacities[i] = this->buses[i]->capacity;
+    }
+    std::vector<int> stop_graph_nodes(N);
+    for(int i = 0; i < N; i++) {
+        stop_graph_nodes[i] = graph->get_node(this->stops.value()[i]->pos, false);
+    }
+    std::vector<int> assignment;
+    for(int _ = 0; _ < 50; _++) {
+        std::cout << "ITERATION : " << _ << std::endl;
+
+        //compute assignment costs
+        std::vector<std::vector<ld>> cost(N, std::vector<ld>(M));
+        for(int i = 0; i < N; i++) {
+            for(int j = 0; j < M; j++) {
+                cost[i][j] = graph->get_dist(stop_graph_nodes[i], cluster_centers[j], false);
+            }
         }
-        this->assignments.value().push_back(new BusStopAssignment(0, this->buses[0]->id, stops));
+        std::cout << "COMPUTED COSTS : " << N << " " << M << " " << N * M << std::endl;
+
+        //get mcmf assignment
+        assignment = mcmf::calc_assignment(stop_weights, cost, bus_capacities);
+        std::cout << "DONE MCMF" << std::endl;
+        for(int i = 0; i < assignment.size(); i++) {
+            std::cout << assignment[i] << " ";
+        }
+        std::cout << "\n";
+        
+        //recompute centers as euclidean average of stop centers
+        std::vector<std::pair<ld, ld>> sum(M, {0, 0});
+        std::vector<ld> amt(M, 0);
+        for(int i = 0; i < N; i++) {
+            Coordinate* pos = this->stops.value()[i]->pos;
+            sum[assignment[i]].first += pos->lat;
+            sum[assignment[i]].second += pos->lon;
+            amt[assignment[i]] ++;
+        }
+        for(int i = 0; i < M; i++) {
+            if(amt[i] == 0) {
+                std::cout << "NOTHING ASSIGNED TO BUS : " << i << std::endl;
+                //randomly reassign to another stop
+                int stop_ind = random() % N;
+                int graph_ind = graph->get_node(this->stops.value()[stop_ind]->pos, false);
+                cluster_centers[i] = graph_ind;
+            }
+            else {
+                sum[i].first /= amt[i];
+                sum[i].second /= amt[i];
+                Coordinate* npos = new Coordinate(sum[i].first, sum[i].second);
+                int graph_ind = graph->get_node(npos, false);
+                cluster_centers[i] = graph_ind;
+            }
+        }
     }
 
-    for(int i = 1; i < this->buses.size(); i++) {
-        this->assignments.value().push_back(new BusStopAssignment(i, this->buses[i]->id, {}));
+    //construct assignments
+    std::vector<BusStopAssignment*> assignments(M);
+    for(int i = 0; i < M; i++) {
+        assignments[i] = new BusStopAssignment(i, this->buses[i]->id, {});
     }
+    for(int i = 0; i < N; i++) {
+        assert(assignment[i] != -1);
+        assignments[assignment[i]]->stops.insert(this->stops.value()[i]->id);
+    }
+
+    this->assignments = assignments;
 }
+
+// void BRP::do_p2() {
+//     assert(this->stops.has_value());
+
+//     //for now, just assign all stops to one bus
+//     this->assignments = std::vector<BusStopAssignment*>();
+//     assert(this->buses.size() >= 1);
+//     {
+//         std::set<bsid_t> stops;
+//         for(int i = 0; i < this->stops.value().size(); i++) {
+//             stops.insert(this->stops.value()[i]->id);
+//         }
+//         this->assignments.value().push_back(new BusStopAssignment(0, this->buses[0]->id, stops));
+//     }
+
+//     for(int i = 1; i < this->buses.size(); i++) {
+//         this->assignments.value().push_back(new BusStopAssignment(i, this->buses[i]->id, {}));
+//     }
+// }
 
 void BRP::do_p3() {
     assert(this->stops.has_value());
     assert(this->assignments.has_value());
 
+    // -- TSP MUTATION STRATEGIES --
+    std::mt19937 rng(std::time(0)); 
+
+    auto rand_int = [&](int lo, int hi) {
+        std::uniform_int_distribution<int> d(lo, hi);
+        return d(rng);
+    };
+    auto rand_prob = [&](){
+        std::uniform_real_distribution<double> d(0.0, 1.0);
+        return d(rng);
+    };
+
+    auto rand_distinct_pair = [&](int n){
+        int i = rand_int(0, n-1);
+        int j = rand_int(0, n-2);
+        if (j >= i) j++;
+        return std::pair{i,j};
+    };
+    auto rand_segment = [&](int n){
+        int l = rand_int(0, n-1);
+        int r = rand_int(0, n-1);
+        if (l > r) std::swap(l, r);
+        return std::pair{l,r};
+    };
+
+    // 1) Swap two positions
+    auto mutate_swap = [&](std::vector<int>& route){
+        auto [i,j] = rand_distinct_pair((int)route.size());
+        std::swap(route[i], route[j]);
+    };
+
+    // 2) remove at i, insert before j
+    auto mutate_insertion = [&](std::vector<int>& route){
+        auto [i,j] = rand_distinct_pair((int)route.size());
+        int v = route[i];
+        if (i < j) {
+            for (int k = i; k < j; ++k) route[k] = route[k+1];
+            route[j] = v;
+        } else {
+            for (int k = i; k > j; --k) route[k] = route[k-1];
+            route[j] = v;
+        }
+    };
+
+    // 3) reverse a segment [l, r]
+    auto mutate_inversion = [&](std::vector<int>& route){
+        auto [l,r] = rand_segment((int)route.size());
+        if (l < r) std::reverse(route.begin()+l, route.begin()+r+1);
+    };
+
+    // 4) randomly permute inside [l, r]
+    auto mutate_scramble = [&](std::vector<int>& route){
+        auto [l,r] = rand_segment((int)route.size());
+        if (l < r) std::shuffle(route.begin()+l, route.begin()+r+1, rng);
+    };
+
+    // 5) cut [l, r] and reinsert at position j
+    auto mutate_displacement = [&](std::vector<int>& route){
+        auto [l,r] = rand_segment((int)route.size());
+        if (l == r) return;
+        std::vector<int> seg(route.begin()+l, route.begin()+r+1);
+        // erase segment
+        route.erase(route.begin()+l, route.begin()+r+1);
+        // choose new insertion point in the shorter vector
+        int j = rand_int(0, (int)route.size());
+        route.insert(route.begin()+j, seg.begin(), seg.end());
+    };
+
+    // 6) do k neighbor swaps
+    auto mutate_adjacent_burst = [&](std::vector<int>& route){
+        int k = std::min<int>(3, (int)route.size()-1); // up to 3 small tweaks
+        for (int t = 0; t < k; ++t) {
+            int i = rand_int(0, (int)route.size()-2);
+            std::swap(route[i], route[i+1]);
+        }
+    };
+
+    auto apply_mutations = [&](std::vector<int>& route){
+        const double p_swap        = 0.25;
+        const double p_insertion   = 0.25;
+        const double p_inversion   = 0.30;
+        const double p_scramble    = 0.15;
+        const double p_displace    = 0.20;
+        const double p_adj_burst   = 0.20;
+
+        int ops = 1 + rand_int(0, 2);
+        for (int t = 0; t < ops; ++t) {
+            double r = rand_prob();
+            if (r < p_swap) mutate_swap(route);
+            else if ((r -= p_swap) < p_insertion) mutate_insertion(route);
+            else if ((r -= p_insertion) < p_inversion) mutate_inversion(route);
+            else if ((r -= p_inversion) < p_scramble) mutate_scramble(route);
+            else if ((r -= p_scramble) < p_displace) mutate_displacement(route);
+            else mutate_adjacent_burst(route);
+        }
+    };
+
     //create road graph
     Graph* graph = this->create_graph();
 
     //create mapping between stop id and index
-    int n = this->stops.value().size(); //+2 for school and bus yard
+    int n = this->stops.value().size(); 
     assert(n > 0);
     std::map<bsid_t, int> indmp;
     std::vector<bsid_t> rindmp(n);
@@ -560,10 +836,11 @@ void BRP::do_p3() {
         int m = assignment->stops.size();
         if(m == 0) {
             //this bus doesn't have any stops
-            this->routes.value().push_back(new BusRoute(i, assignment->id, {}));
+            this->routes.value().push_back(new BusRoute(i, assignment->id, {}, {}));
             continue;
         }
 
+        //array of indexes
         std::vector<int> cur_stops;
         for(bsid_t stop : assignment->stops) {
             cur_stops.push_back(indmp[stop]);
@@ -576,9 +853,9 @@ void BRP::do_p3() {
         std::cout << std::endl;
 
         //currently, use genetic algorithm to solve. 
-        const int EPOCH_MAX = 100;
-        const int POPULATION_MAX = 1000;
-        const int KEEP_AMT = 100;
+        const int EPOCH_MAX = 300;
+        const int POPULATION_MAX = 500;
+        const int KEEP_AMT = 50;
         assert(POPULATION_MAX >= 1);
         assert(KEEP_AMT >= 1 && KEEP_AMT < POPULATION_MAX);
         assert(EPOCH_MAX >= 1);
@@ -588,7 +865,8 @@ void BRP::do_p3() {
         for(int j = 0; j < POPULATION_MAX; j++) {
             std::vector<int> next(m);
             for(int k = 0; k < m; k++) next[k] = k;
-            std::random_shuffle(next.begin(), next.end());
+            //std::random_shuffle(next.begin(), next.end());
+            std::shuffle(next.begin(), next.end(), rng);
             population[j] = next;
         }
 
@@ -609,22 +887,16 @@ void BRP::do_p3() {
                 std::vector<int> cur = population[j];
                 assert(cur.size() >= 1);
                 ld cdist = 0;
-                cdist += school_dist[graph_ind[cur_stops[cur[0]]]];
+                cdist += bus_yard_dist[graph_ind[cur_stops[cur[0]]]];
                 for(int k = 0; k < cur.size() - 1; k++) {
                     int u = cur_stops[cur[k]];
                     int v = graph_ind[cur_stops[cur[k + 1]]];
-                    // std::cout << "U V : " << u << " " << v << " " << dist.size() << " " << dist[u].size() << std::endl;
                     cdist += dist[u][v];
                 }
-                cdist += bus_yard_dist[graph_ind[cur_stops[cur[cur.size() - 1]]]];
+                cdist += dist[cur_stops[cur[cur.size() - 1]]][school_graph_ind];
                 ord[j] = {cdist, j};
             }
             sort(ord.begin(), ord.end());
-
-            // std::cout << "ORD : " << std::endl;
-            // for(std::pair<ld, int>& x : ord) {
-            //     std::cout << x.second << " " << x.first << std::endl;
-            // }
 
             //keep track of best one
             if(ord[0].first < best_dist) {
@@ -644,13 +916,21 @@ void BRP::do_p3() {
                     //this one died, choose some out of the ones that survived to reproduce
                     std::vector<int> next = npopulation[std::rand() % KEEP_AMT];
 
-                    //randomly swap a few nodes
-                    int u = std::rand() % m;
-                    int v = std::rand() % m;
-                    std::swap(next[u], next[v]);
+                    //apply mutation
+                    apply_mutations(next);
 
                     npopulation[j] = next;
                 }
+            }
+            population = npopulation;
+
+            if((epoch + 1) % 20 == 0) {
+                std::cout << "EPOCH : " << (epoch + 1) << " " << best_dist << "\n";
+                std::cout << "ORD : ";
+                for(std::pair<ld, int>& x : ord) {
+                    std::cout << x.first << " ";
+                }
+                std::cout << "\n";
             }
         }
 
@@ -659,12 +939,61 @@ void BRP::do_p3() {
         std::cout << "BEST : " << best_dist << std::endl;
         for(int x : best) std::cout << x << " ";
         std::cout << std::endl;
+
         std::vector<bsid_t> route_stops(m);
         for(int j = 0; j < m; j++) {
             route_stops[j] = rindmp[cur_stops[best[j]]];
         }
 
-        this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops));
+        std::vector<std::vector<Coordinate*>> paths(m + 1);
+        
+        //bus yard to first stop
+        {
+            std::vector<Coordinate*> path;
+            int ptr = graph_ind[indmp[route_stops[0]]];
+            while(ptr != bus_yard_graph_ind) {
+                assert(bus_yard_prev[ptr] != -1);
+                path.push_back(graph->nodes[ptr]->coord->make_copy());
+                ptr = bus_yard_prev[ptr];
+            }
+            path.push_back(graph->nodes[bus_yard_graph_ind]->coord->make_copy());
+            reverse(path.begin(), path.end());
+            paths[0] = path;
+        }   
+
+        //between stops
+        for(int i = 0; i < m - 1; i++) {
+            std::vector<Coordinate*> path;
+            int stop_ind = indmp[route_stops[i]];
+            int stop_graph_ind = graph_ind[stop_ind];
+            int ptr = graph_ind[indmp[route_stops[i + 1]]];
+            while(ptr != stop_graph_ind) {
+                assert(prev[stop_ind][ptr] != -1);
+                path.push_back(graph->nodes[ptr]->coord->make_copy());
+                ptr = prev[stop_ind][ptr];
+            }
+            path.push_back(graph->nodes[stop_graph_ind]->coord->make_copy());
+            reverse(path.begin(), path.end());
+            paths[i + 1] = path;
+        }
+
+        //last stop to school
+        {
+            std::vector<Coordinate*> path;
+            int stop_ind = indmp[route_stops[m - 1]];
+            int stop_graph_ind = graph_ind[stop_ind];
+            int ptr = school_graph_ind;
+            while(ptr != stop_graph_ind) {
+                assert(prev[stop_ind][ptr] != -1);
+                path.push_back(graph->nodes[ptr]->coord->make_copy());
+                ptr = prev[stop_ind][ptr];
+            }
+            path.push_back(graph->nodes[stop_graph_ind]->coord->make_copy());
+            reverse(path.begin(), path.end());
+            paths[m] = path;
+        }
+
+        this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops, paths));
     }
     
     assert(this->assignments.value().size() == this->routes.value().size());

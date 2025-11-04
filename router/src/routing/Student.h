@@ -8,5 +8,6 @@ struct Student {
     Student(sid_t _id, Coordinate* _pos);
     
     static Student* parse(json& j);
+    json to_json();
     Student* make_copy();
 };

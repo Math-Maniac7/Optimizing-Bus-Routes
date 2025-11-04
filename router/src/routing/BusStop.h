@@ -11,5 +11,6 @@ struct BusStop {
     BusStop(bsid_t _id, Coordinate* _pos, std::vector<sid_t> _students);
 
     static BusStop* parse(json& j);
+    json to_json();
     BusStop* make_copy();
 };

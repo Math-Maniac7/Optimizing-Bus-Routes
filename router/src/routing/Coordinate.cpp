@@ -14,6 +14,13 @@ Coordinate* Coordinate::parse(json& j) {
     return new Coordinate(lat, lon);
 }
 
+json Coordinate::to_json() {
+    json ret;
+    ret["lat"] = this->lat;
+    ret["lon"] = this->lon;
+    return ret;
+}
+
 Coordinate* Coordinate::make_copy() {
     return new Coordinate(lat, lon);
 }

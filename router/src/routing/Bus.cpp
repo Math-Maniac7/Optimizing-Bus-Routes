@@ -14,6 +14,13 @@ Bus* Bus::parse(json& j) {
     return new Bus(id, capacity);
 }
 
+json Bus::to_json() {
+    json ret;
+    ret["id"] = this->id;
+    ret["capacity"] = this->capacity;
+    return ret;
+}
+
 Bus* Bus::make_copy() {
     return new Bus(id, capacity);
 }

@@ -17,6 +17,14 @@ BusStop* BusStop::parse(json& j) {
     return new BusStop(id, pos, students);
 }
 
+json BusStop::to_json() {
+    json ret;
+    ret["id"] = this->id;
+    ret["pos"] = this->pos->to_json();
+    ret["students"] = this->students;
+    return ret;
+}
+
 BusStop* BusStop::make_copy() {
     return new BusStop(id, pos->make_copy(), students);
 }
