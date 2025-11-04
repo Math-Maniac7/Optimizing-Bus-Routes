@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/csv_parser.dart';
 import '../services/geocoding_service.dart';
 import '../services/storage_service.dart';

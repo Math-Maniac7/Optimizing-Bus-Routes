@@ -42,7 +42,7 @@ packages:
     source: hosted
     version: "1.1.2"
   collection:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: collection
       sha256: "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76"
@@ -276,10 +276,10 @@ packages:
     dependency: transitive
     description:
       name: google_maps_flutter_android
-      sha256: "7c7ff5b883b27bfdd0d52d91d89faf00858a6c1b33aeca0dc80faca64f389983"
+      sha256: f820a3990d4ff23e3baf01ce794f7f08cca9a9ce6c875ec96882d605f6f039df
       url: "https://pub.dev"
     source: hosted
-    version: "2.18.3"
+    version: "2.18.4"
   google_maps_flutter_ios:
     dependency: transitive
     description:
@@ -685,6 +685,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  widget_to_marker:
+    dependency: "direct main"
+    description:
+      name: widget_to_marker
+      sha256: badc36f23c76f3ca9d43d7780058096be774adf0f661bdb6eb6f6b893f648ab9
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.6"
   win32:
     dependency: transitive
     description:
@@ -711,4 +719,4 @@ packages:
     version: "1.1.0"
 sdks:
   dart: ">=3.9.2 <4.0.0"
-  flutter: ">=3.29.0"
+  flutter: ">=3.35.0"

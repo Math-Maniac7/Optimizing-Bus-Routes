@@ -2,6 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/maps.dart';
 import '../widgets/location_upload_drawer.dart';
+import 'package:collection/collection.dart';
+
+typedef PhaseType = DropdownMenuEntry<Phase>;
+
+enum Phase {
+  phaseOne('Phase', 1),
+  phaseTwo('Phase', 2),
+  phaseThree('Phase', 3);
+
+  const Phase(this.label, this.phase);
+  final String label;
+  final int phase;
+
+  static final List<PhaseType> entries = UnmodifiableListView<PhaseType>(
+    values.map<PhaseType>(
+      (Phase p) => PhaseType(
+        value: p,
+        label: '${p.label} ${p.phase}',
+        style: MenuItemButton.styleFrom(
+          foregroundColor: const Color.fromRGBO(57, 103, 136, 1),
+        ),
+      ),
+    ),
+  );
+}
 
 class RouteOptimization extends StatefulWidget {
   const RouteOptimization({super.key});
@@ -12,8 +37,9 @@ class RouteOptimization extends StatefulWidget {
 }
 
 class _RouteOptimizationState extends State<RouteOptimization> {
-  String activeMode = ''; // tracks which button is active
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  Phase? selectedPhase;
+  bool isModified = false;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +58,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              'Bus Route Optimizer',
+              isModified ? 'Edit Mode' : 'Bus Route Optimizer',
               style: GoogleFonts.quicksand(
                 fontSize: 70,
                 fontWeight: FontWeight.w700,
@@ -48,26 +74,95 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        _buildSideButton("Add Locations", screenWidth),
-                        SizedBox(height: screenHeight * 0.02),
-                        _buildSideButton("Generate Routes", screenWidth),
-                        SizedBox(height: screenHeight * 0.02),
-                        _buildSideButton("Modify", screenWidth),
-                        SizedBox(height: screenHeight * 0.02),
-                        _buildSideButton("Boundaries", screenWidth),
+                        if (!isModified) ...[
+                          _buildSideButton("Add Locations", screenWidth),
+                          SizedBox(height: screenHeight * 0.02),
+                          _buildSideButton("Generate Routes", screenWidth),
+                          SizedBox(height: screenHeight * 0.02),
+                          _buildSideButton("Modify", screenWidth),
+                          SizedBox(height: screenHeight * 0.02),
+                          DropdownMenu<Phase>(
+                            width: screenWidth * .15,
+                            initialSelection: Phase.phaseOne,
+                            requestFocusOnTap: false,
+                            onSelected: (Phase? p) {
+                              setState(() {
+                                selectedPhase = p;
+                              });
+                            },
+                            dropdownMenuEntries: Phase.entries,
+                            inputDecorationTheme: InputDecorationTheme(
+                              fillColor: const Color.fromARGB(
+                                180,
+                                255,
+                                255,
+                                255,
+                              ),
+                              filled: true,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            menuStyle: MenuStyle(
+                              minimumSize: WidgetStatePropertyAll(
+                                Size(screenWidth * 0.15, 0),
+                              ),
+                              backgroundColor:
+                                  const WidgetStatePropertyAll<Color>(
+                                    Colors.white,
+                                  ),
+                            ),
+                            textStyle: GoogleFonts.quicksand(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ] else ...[
+                          // When modified, show Save and Cancel
+                          Center(
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Use the scroll wheel to zoom in and out.',
+                                  style: GoogleFonts.quicksand(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: screenHeight * 0.02),
+                                _buildSideButton("Save", screenWidth),
+                                SizedBox(height: screenHeight * 0.02),
+                                _buildSideButton("Cancel", screenWidth),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   SizedBox(width: screenWidth * 0.02),
                   Expanded(
                     flex: 6, // give more width to the map
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color.fromRGBO(57, 103, 136, 1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: GoogleMaps(),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: GoogleMaps(isModified: isModified),
+                        ),
+                        if (isModified)
+                          IgnorePointer(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color.fromARGB(126, 255, 255, 255),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -81,15 +176,12 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   }
 
   Widget _buildSideButton(String text, double screenWidth) {
-    final bool isActive = activeMode == text;
     return SizedBox(
-      width: screenWidth * 0.15, // slim fixed width
+      width: screenWidth * 0.15,
       child: TextButton(
         style: ButtonStyle(
-          backgroundColor: WidgetStatePropertyAll<Color>(
-            isActive
-                ? const Color.fromARGB(180, 255, 255, 255)
-                : const Color.fromARGB(90, 255, 255, 255),
+          backgroundColor: const WidgetStatePropertyAll<Color>(
+            Color.fromARGB(180, 255, 255, 255),
           ),
           padding: const WidgetStatePropertyAll<EdgeInsets>(
             EdgeInsets.symmetric(vertical: 12, horizontal: 8),
@@ -99,19 +191,16 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           ),
         ),
         onPressed: () {
-          setState(() {
-            activeMode = text; // highlight this button
-          });
-
-          // Call different functions depending on which was pressed
           if (text == "Add Locations") {
             _onAddLocations();
           } else if (text == "Generate Routes") {
             _onGenerateRoutes();
           } else if (text == "Modify") {
             _onModify();
-          } else if (text == "Boundaries") {
-            _onBoundaries();
+          } else if (text == "Save") {
+            _onSave();
+          } else if (text == "Cancel") {
+            _onCancel();
           }
         },
         child: Text(
@@ -138,11 +227,16 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
   void _onModify() {
     debugPrint("Modify button pressed");
-    // TODO: modify routes or map details
+    setState(() => isModified = true);
   }
 
-  void _onBoundaries() {
-    debugPrint("Boundaries button pressed");
-    // TODO: toggle or edit map boundaries
+  void _onSave() {
+    debugPrint("Save button pressed");
+    // TODO: add save logic
+  }
+
+  void _onCancel() {
+    debugPrint("Cancel button pressed");
+    setState(() => isModified = false);
   }
 }
