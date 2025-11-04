@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
 import '../widgets/maps.dart';
 import '../widgets/location_upload_drawer.dart';
+import '../WASM/wasm_interop.dart';
+import '../services/storage_service.dart';
 import 'package:collection/collection.dart';
 
 typedef PhaseType = DropdownMenuEntry<Phase>;
@@ -38,8 +41,10 @@ class RouteOptimization extends StatefulWidget {
 
 class _RouteOptimizationState extends State<RouteOptimization> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  Phase? selectedPhase;
+  Phase? selectedPhase = Phase.phaseOne; // Default to Phase 1
   bool isModified = false;
+  bool _isDrawerOpen = false;
+  bool _isGeneratingRoutes = false;
 
   @override
   Widget build(BuildContext context) {
@@ -49,12 +54,19 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color.fromRGBO(57, 103, 136, 1),
-      body: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: screenWidth * 0.02,
-          vertical: screenHeight * 0.02,
-        ),
-        child: Column(
+      onEndDrawerChanged: (isOpened) {
+        setState(() {
+          _isDrawerOpen = isOpened;
+        });
+      },
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: screenWidth * 0.02,
+              vertical: screenHeight * 0.02,
+            ),
+            child: Column(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
@@ -151,7 +163,13 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(20),
-                          child: GoogleMaps(isModified: isModified),
+                          child: AbsorbPointer(
+                            absorbing: _isDrawerOpen,
+                            child: GoogleMaps(
+                              isModified: isModified,
+                              interactionEnabled: !_isDrawerOpen,
+                            ),
+                          ),
                         ),
                         if (isModified)
                           IgnorePointer(
@@ -169,7 +187,49 @@ class _RouteOptimizationState extends State<RouteOptimization> {
               ),
             ),
           ],
-        ),
+            ),
+          ),
+          // Full-screen blocking overlay when drawer is open
+          if (_isDrawerOpen)
+            Positioned.fill(
+              child: Listener(
+                onPointerDown: (_) {},
+                onPointerMove: (_) {},
+                onPointerUp: (_) {},
+                onPointerCancel: (_) {},
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  color: Colors.transparent,
+                ),
+              ),
+            ),
+          // Loading overlay when generating routes
+          if (_isGeneratingRoutes)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Generating routes...',
+                        style: GoogleFonts.quicksand(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
       endDrawer: const LocationUploadDrawer(),
     );
@@ -220,9 +280,161 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     _scaffoldKey.currentState?.openEndDrawer();
   }
 
-  void _onGenerateRoutes() {
+  Future<void> _onGenerateRoutes() async {
     debugPrint("Generate Routes button pressed");
-    // TODO: implement route generation logic
+    
+    // Determine which phase to use (default to Phase 1 if not selected)
+    final phase = selectedPhase ?? Phase.phaseOne;
+    final phaseNumber = phase.phase;
+    
+    // Only implement Phase 1 for now
+    if (phaseNumber == 1) {
+      await _generatePhase1Routes();
+    } else if (phaseNumber == 2) {
+      _showMessage('Phase 2 not yet implemented', isError: false);
+    } else if (phaseNumber == 3) {
+      _showMessage('Phase 3 not yet implemented', isError: false);
+    }
+  }
+
+  Future<void> _generatePhase1Routes() async {
+    // Check if data exists in session storage
+    if (!StorageService.hasBusRouteData()) {
+      _showMessage('No location data found. Please add locations first.', isError: true);
+      return;
+    }
+
+    // Get JSON from session storage
+    final jsonData = StorageService.getBusRouteData();
+    if (jsonData == null) {
+      _showMessage('Failed to retrieve location data from storage.', isError: true);
+      return;
+    }
+
+    setState(() {
+      _isGeneratingRoutes = true;
+    });
+
+    try {
+      // Convert JSON map to string
+      final jsonString = jsonEncode(jsonData);
+      debugPrint('Calling phase_1 with JSON data...');
+
+      // Call the WASM phase_1 function
+      final resultString = await phase_1(jsonString);
+      debugPrint('Received result from phase_1');
+
+      // Parse the GeoJSON result
+      final geoJsonResult = jsonDecode(resultString) as Map<String, dynamic>;
+      debugPrint('Parsed GeoJSON result');
+
+      // Extract stops from GeoJSON features
+      final stops = _extractStopsFromGeoJson(geoJsonResult, jsonData);
+      debugPrint('Extracted ${stops.length} stops from GeoJSON');
+
+      // Add stops to the existing JSON data
+      final updatedJsonData = Map<String, dynamic>.from(jsonData);
+      updatedJsonData['stops'] = stops;
+      debugPrint('Updated JSON with stops');
+
+      // Save the updated JSON back to session storage
+      await StorageService.saveBusRouteData(updatedJsonData);
+      debugPrint('Saved updated JSON to session storage');
+
+      _showMessage('Routes generated successfully!', isError: false);
+    } catch (e) {
+      debugPrint('Error generating routes: $e');
+      _showMessage('Error generating routes: ${e.toString()}', isError: true);
+    } finally {
+      setState(() {
+        _isGeneratingRoutes = false;
+      });
+    }
+  }
+
+  /// Extracts bus stops from GeoJSON and converts them to the BRP format
+  /// Matches stops to students by index (phase 1 creates one stop per student)
+  List<Map<String, dynamic>> _extractStopsFromGeoJson(
+    Map<String, dynamic> geoJson,
+    Map<String, dynamic> originalJson,
+  ) {
+    final List<Map<String, dynamic>> stops = [];
+    
+    // Get features array from GeoJSON
+    final features = geoJson['features'] as List<dynamic>?;
+    if (features == null) {
+      debugPrint('Warning: No features found in GeoJSON');
+      return stops;
+    }
+
+    // Get students array from original JSON for matching
+    final students = originalJson['students'] as List<dynamic>? ?? [];
+    
+    // Extract stops (features with name starting with "stop ")
+    final stopFeatures = features.where((feature) {
+      final props = feature['properties'] as Map<String, dynamic>?;
+      final name = props?['name'] as String?;
+      return name != null && name.startsWith('stop ');
+    }).toList();
+
+    // Sort stops by their ID (extracted from name "stop X")
+    stopFeatures.sort((a, b) {
+      final aProps = a['properties'] as Map<String, dynamic>;
+      final bProps = b['properties'] as Map<String, dynamic>;
+      final aName = aProps['name'] as String;
+      final bName = bProps['name'] as String;
+      final aId = int.tryParse(aName.replaceFirst('stop ', '')) ?? 0;
+      final bId = int.tryParse(bName.replaceFirst('stop ', '')) ?? 0;
+      return aId.compareTo(bId);
+    });
+
+    // Convert each stop feature to BRP format
+    for (int i = 0; i < stopFeatures.length; i++) {
+      final feature = stopFeatures[i];
+      final geometry = feature['geometry'] as Map<String, dynamic>;
+      final coordinates = geometry['coordinates'] as List<dynamic>;
+      
+      // GeoJSON uses [lon, lat] format, we need {lat, lon}
+      final lon = (coordinates[0] as num).toDouble();
+      final lat = (coordinates[1] as num).toDouble();
+      
+      // Extract stop ID from name
+      final props = feature['properties'] as Map<String, dynamic>;
+      final name = props['name'] as String;
+      final stopId = int.tryParse(name.replaceFirst('stop ', '')) ?? i;
+      
+      // Match students to stops by index (phase 1 creates one stop per student)
+      // Each stop gets the student at the same index
+      final studentIds = <int>[];
+      if (i < students.length) {
+        final student = students[i] as Map<String, dynamic>;
+        final studentId = student['id'] as int?;
+        if (studentId != null) {
+          studentIds.add(studentId);
+        }
+      }
+
+      stops.add({
+        'id': stopId,
+        'pos': {
+          'lat': lat,
+          'lon': lon,
+        },
+        'students': studentIds,
+      });
+    }
+
+    return stops;
+  }
+
+  void _showMessage(String message, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: Duration(seconds: isError ? 4 : 2),
+      ),
+    );
   }
 
   void _onModify() {
