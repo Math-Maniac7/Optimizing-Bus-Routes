@@ -45,6 +45,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   bool isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
+  int _mapReloadKey = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -67,126 +68,132 @@ class _RouteOptimizationState extends State<RouteOptimization> {
               vertical: screenHeight * 0.02,
             ),
             child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(
-              isModified ? 'Edit Mode' : 'Bus Route Optimizer',
-              style: GoogleFonts.quicksand(
-                fontSize: 70,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-            SizedBox(height: screenHeight * 0.02),
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 1,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (!isModified) ...[
-                          _buildSideButton("Add Locations", screenWidth),
-                          SizedBox(height: screenHeight * 0.02),
-                          _buildSideButton("Generate Routes", screenWidth),
-                          SizedBox(height: screenHeight * 0.02),
-                          _buildSideButton("Modify", screenWidth),
-                          SizedBox(height: screenHeight * 0.02),
-                          DropdownMenu<Phase>(
-                            width: screenWidth * .15,
-                            initialSelection: Phase.phaseOne,
-                            requestFocusOnTap: false,
-                            onSelected: (Phase? p) {
-                              setState(() {
-                                selectedPhase = p;
-                              });
-                            },
-                            dropdownMenuEntries: Phase.entries,
-                            inputDecorationTheme: InputDecorationTheme(
-                              fillColor: const Color.fromARGB(
-                                180,
-                                255,
-                                255,
-                                255,
-                              ),
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            menuStyle: MenuStyle(
-                              minimumSize: WidgetStatePropertyAll(
-                                Size(screenWidth * 0.15, 0),
-                              ),
-                              backgroundColor:
-                                  const WidgetStatePropertyAll<Color>(
-                                    Colors.white,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  isModified ? 'Edit Mode' : 'Bus Route Optimizer',
+                  style: GoogleFonts.quicksand(
+                    fontSize: 70,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(height: screenHeight * 0.02),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 1,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (!isModified) ...[
+                              _buildSideButton("Add Locations", screenWidth),
+                              SizedBox(height: screenHeight * 0.02),
+                              _buildSideButton("Generate Routes", screenWidth),
+                              SizedBox(height: screenHeight * 0.02),
+                              _buildSideButton("Modify", screenWidth),
+                              SizedBox(height: screenHeight * 0.02),
+                              DropdownMenu<Phase>(
+                                width: screenWidth * .15,
+                                initialSelection: Phase.phaseOne,
+                                requestFocusOnTap: false,
+                                onSelected: (Phase? p) {
+                                  setState(() {
+                                    selectedPhase = p;
+                                  });
+                                },
+                                dropdownMenuEntries: Phase.entries,
+                                inputDecorationTheme: InputDecorationTheme(
+                                  fillColor: const Color.fromARGB(
+                                    180,
+                                    255,
+                                    255,
+                                    255,
                                   ),
-                            ),
-                            textStyle: GoogleFonts.quicksand(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ] else ...[
-                          // When modified, show Save and Cancel
-                          Center(
-                            child: Column(
-                              children: [
-                                Text(
-                                  'Use the scroll wheel to zoom in and out.',
-                                  style: GoogleFonts.quicksand(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
+                                  filled: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
                                   ),
-                                  textAlign: TextAlign.center,
                                 ),
-                                SizedBox(height: screenHeight * 0.02),
-                                _buildSideButton("Save", screenWidth),
-                                SizedBox(height: screenHeight * 0.02),
-                                _buildSideButton("Cancel", screenWidth),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  SizedBox(width: screenWidth * 0.02),
-                  Expanded(
-                    flex: 6, // give more width to the map
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: AbsorbPointer(
-                            absorbing: _isDrawerOpen,
-                            child: GoogleMaps(
-                              isModified: isModified,
-                              interactionEnabled: !_isDrawerOpen,
-                            ),
-                          ),
+                                menuStyle: MenuStyle(
+                                  minimumSize: WidgetStatePropertyAll(
+                                    Size(screenWidth * 0.15, 0),
+                                  ),
+                                  backgroundColor:
+                                      const WidgetStatePropertyAll<Color>(
+                                        Colors.white,
+                                      ),
+                                ),
+                                textStyle: GoogleFonts.quicksand(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ] else ...[
+                              // When modified, show Save and Cancel
+                              Center(
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      'Use the scroll wheel to zoom in and out.',
+                                      style: GoogleFonts.quicksand(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    SizedBox(height: screenHeight * 0.02),
+                                    _buildSideButton("Save", screenWidth),
+                                    SizedBox(height: screenHeight * 0.02),
+                                    _buildSideButton("Cancel", screenWidth),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        if (isModified)
-                          IgnorePointer(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: const Color.fromARGB(126, 255, 255, 255),
-                                borderRadius: BorderRadius.circular(20),
+                      ),
+                      SizedBox(width: screenWidth * 0.02),
+                      Expanded(
+                        flex: 6, // give more width to the map
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: AbsorbPointer(
+                                absorbing: _isDrawerOpen,
+                                child: GoogleMaps(
+                                  key: ValueKey(_mapReloadKey),
+                                  isModified: isModified,
+                                  interactionEnabled: !_isDrawerOpen,
+                                ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
+                            if (isModified)
+                              IgnorePointer(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color.fromARGB(
+                                      126,
+                                      255,
+                                      255,
+                                      255,
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
             ),
           ),
           // Full-screen blocking overlay when drawer is open
@@ -198,9 +205,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                 onPointerUp: (_) {},
                 onPointerCancel: (_) {},
                 behavior: HitTestBehavior.opaque,
-                child: Container(
-                  color: Colors.transparent,
-                ),
+                child: Container(color: Colors.transparent),
               ),
             ),
           // Loading overlay when generating routes
@@ -282,11 +287,11 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
   Future<void> _onGenerateRoutes() async {
     debugPrint("Generate Routes button pressed");
-    
+
     // Determine which phase to use (default to Phase 1 if not selected)
     final phase = selectedPhase ?? Phase.phaseOne;
     final phaseNumber = phase.phase;
-    
+
     // Only implement Phase 1 for now
     if (phaseNumber == 1) {
       await _generatePhase1Routes();
@@ -300,14 +305,20 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   Future<void> _generatePhase1Routes() async {
     // Check if data exists in session storage
     if (!StorageService.hasBusRouteData()) {
-      _showMessage('No location data found. Please add locations first.', isError: true);
+      _showMessage(
+        'No location data found. Please add locations first.',
+        isError: true,
+      );
       return;
     }
 
     // Get JSON from session storage
     final jsonData = StorageService.getBusRouteData();
     if (jsonData == null) {
-      _showMessage('Failed to retrieve location data from storage.', isError: true);
+      _showMessage(
+        'Failed to retrieve location data from storage.',
+        isError: true,
+      );
       return;
     }
 
@@ -341,6 +352,10 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       await StorageService.saveBusRouteData(updatedJsonData);
       debugPrint('Saved updated JSON to session storage');
 
+      setState(() {
+        _mapReloadKey++; // force map to rebuild
+      });
+
       _showMessage('Routes generated successfully!', isError: false);
     } catch (e) {
       debugPrint('Error generating routes: $e');
@@ -359,7 +374,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     Map<String, dynamic> originalJson,
   ) {
     final List<Map<String, dynamic>> stops = [];
-    
+
     // Get features array from GeoJSON
     final features = geoJson['features'] as List<dynamic>?;
     if (features == null) {
@@ -369,7 +384,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
     // Get students array from original JSON for matching
     final students = originalJson['students'] as List<dynamic>? ?? [];
-    
+
     // Extract stops (features with name starting with "stop ")
     final stopFeatures = features.where((feature) {
       final props = feature['properties'] as Map<String, dynamic>?;
@@ -393,16 +408,16 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       final feature = stopFeatures[i];
       final geometry = feature['geometry'] as Map<String, dynamic>;
       final coordinates = geometry['coordinates'] as List<dynamic>;
-      
+
       // GeoJSON uses [lon, lat] format, we need {lat, lon}
       final lon = (coordinates[0] as num).toDouble();
       final lat = (coordinates[1] as num).toDouble();
-      
+
       // Extract stop ID from name
       final props = feature['properties'] as Map<String, dynamic>;
       final name = props['name'] as String;
       final stopId = int.tryParse(name.replaceFirst('stop ', '')) ?? i;
-      
+
       // Match students to stops by index (phase 1 creates one stop per student)
       // Each stop gets the student at the same index
       final studentIds = <int>[];
@@ -416,10 +431,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       stops.add({
         'id': stopId,
-        'pos': {
-          'lat': lat,
-          'lon': lon,
-        },
+        'pos': {'lat': lat, 'lon': lon},
         'students': studentIds,
       });
     }

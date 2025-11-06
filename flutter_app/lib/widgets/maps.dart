@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_app/locations.dart' as locations;
-import 'package:widget_to_marker/widget_to_marker.dart';
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
@@ -23,13 +23,48 @@ class _GoogleMapsState extends State<GoogleMaps> {
   int id = 0;
   List<dynamic> stops = [];
 
-  Future<void> _onMapCreated(GoogleMapController controller) async {
-    mapController = controller;
-    stops = await locations.loadGeoJson();
-    buildMarkers();
+  void _fitToMarkers() {
+    if (_markers.isEmpty || mapController == null) return;
+
+    // Build the bounds that include all marker positions
+    LatLngBounds bounds;
+    final positions = _markers.values.map((m) => m.position).toList();
+
+    double south = positions.first.latitude;
+    double north = positions.first.latitude;
+    double west = positions.first.longitude;
+    double east = positions.first.longitude;
+
+    for (var pos in positions) {
+      if (pos.latitude < south) south = pos.latitude;
+      if (pos.latitude > north) north = pos.latitude;
+      if (pos.longitude < west) west = pos.longitude;
+      if (pos.longitude > east) east = pos.longitude;
+    }
+
+    bounds = LatLngBounds(
+      southwest: LatLng(south, west),
+      northeast: LatLng(north, east),
+    );
+
+    // Animate camera to fit bounds
+    mapController.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 50), // 50 = padding
+    );
   }
 
-  Future<void> buildMarkers() async {
+  Future<void> _onMapCreated(GoogleMapController controller) async {
+    mapController = controller;
+    if (StorageService.hasBusRouteData()) {
+      final jsonData = StorageService.getBusRouteData();
+      if (jsonData != null && jsonData['stops'] != null) {
+        stops = jsonData['stops'];
+        buildMarkers(stops);
+      }
+    }
+  }
+
+  void buildMarkers(List<dynamic> stops) async {
     final newMarkers = <String, Marker>{};
     final assetBitmap = await BitmapDescriptor.asset(
       const ImageConfiguration(size: Size(27, 40)),
@@ -39,9 +74,12 @@ class _GoogleMapsState extends State<GoogleMaps> {
     for (final stop in stops) {
       id += 1;
       final key = id.toString();
+      final lat = stop['pos']['lat'] as num;
+      final lon = stop['pos']['lon'] as num;
+
       newMarkers[key] = Marker(
         markerId: MarkerId(key),
-        position: LatLng(stop.lat, stop.lng),
+        position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
         onDragStart: (position) {
           setState(() {
@@ -73,13 +111,17 @@ class _GoogleMapsState extends State<GoogleMaps> {
         ..clear()
         ..addAll(newMarkers);
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fitToMarkers();
+    });
   }
 
   @override
   void didUpdateWidget(covariant GoogleMaps oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isModified != widget.isModified) {
-      buildMarkers();
+      buildMarkers(stops);
     }
   }
 
@@ -100,9 +142,11 @@ class _GoogleMapsState extends State<GoogleMaps> {
         zoomControlsEnabled: widget.interactionEnabled,
         myLocationButtonEnabled: widget.interactionEnabled,
         mapToolbarEnabled: widget.interactionEnabled,
-        onTap: widget.interactionEnabled ? null : (_) {
-          // Ignore taps when interactions are disabled
-        },
+        onTap: widget.interactionEnabled
+            ? null
+            : (_) {
+                // Ignore taps when interactions are disabled
+              },
       ),
     );
   }

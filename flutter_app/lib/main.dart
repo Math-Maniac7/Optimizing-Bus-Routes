@@ -5,7 +5,6 @@ import 'pages/home_page.dart';
 import 'pages/route_page.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-import 'WASM/wasm_interop.dart';
 
 Future<void> main() async {
   //Test to make sure interop works

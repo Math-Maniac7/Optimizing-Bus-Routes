@@ -19,7 +19,7 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
   bool _isProcessing = false;
   String? _errorMessage;
   String? _successMessage;
-  List<Map<String, dynamic>> _buses = [
+  final List<Map<String, dynamic>> _buses = [
     {'id': 0, 'capacity': 100}
   ]; // List of buses with id and capacity
   final List<TextEditingController> _busCapacityControllers = [];
