@@ -22,9 +22,11 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late GoogleMapController mapController;
   int id = 0;
   List<dynamic> stops = [];
+  LatLng? _savedCenter;
+  double? _savedZoom;
 
-  void _fitToMarkers() {
-    if (_markers.isEmpty || mapController == null) return;
+  void _fitToMarkers() async {
+    if (_markers.isEmpty) return;
 
     // Build the bounds that include all marker positions
     LatLngBounds bounds;
@@ -51,6 +53,23 @@ class _GoogleMapsState extends State<GoogleMaps> {
     mapController.animateCamera(
       CameraUpdate.newLatLngBounds(bounds, 50), // 50 = padding
     );
+
+    _savedCenter = LatLng((south + north) / 2, (west + east) / 2);
+    _savedZoom = await _estimateZoomToFitBounds(bounds);
+  }
+
+  Future<double> _estimateZoomToFitBounds(LatLngBounds bounds) async {
+    // Approximation: zoom out based on lat/long difference
+    final latDiff = (bounds.northeast.latitude - bounds.southwest.latitude)
+        .abs();
+    final lonDiff = (bounds.northeast.longitude - bounds.southwest.longitude)
+        .abs();
+    final maxDiff = latDiff > lonDiff ? latDiff : lonDiff;
+
+    if (maxDiff < 0.001) return 18;
+    if (maxDiff < 0.01) return 15;
+    if (maxDiff < 0.1) return 12;
+    return 10; // Fallback
   }
 
   Future<void> _onMapCreated(GoogleMapController controller) async {
@@ -112,16 +131,29 @@ class _GoogleMapsState extends State<GoogleMaps> {
         ..addAll(newMarkers);
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fitToMarkers();
-    });
+    if (_savedCenter == null && _savedZoom == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fitToMarkers(); // First time only
+      });
+    }
   }
 
   @override
   void didUpdateWidget(covariant GoogleMaps oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isModified != widget.isModified) {
-      buildMarkers(stops);
+      final updatedMarkers = <String, Marker>{};
+      _markers.forEach((key, marker) {
+        updatedMarkers[key] = marker.copyWith(
+          draggableParam: widget.isModified,
+        );
+      });
+
+      setState(() {
+        _markers
+          ..clear()
+          ..addAll(updatedMarkers);
+      });
     }
   }
 
@@ -131,10 +163,14 @@ class _GoogleMapsState extends State<GoogleMaps> {
       body: GoogleMap(
         onMapCreated: _onMapCreated,
         initialCameraPosition: CameraPosition(
-          target: LatLng(30.622405, -96.353055),
-          zoom: 15,
+          target: _savedCenter ?? const LatLng(30.622405, -96.353055),
+          zoom: _savedZoom ?? 15,
         ),
         markers: _markers.values.toSet(),
+        onCameraMove: (position) {
+          _savedCenter = position.target;
+          _savedZoom = position.zoom;
+        },
         scrollGesturesEnabled: widget.interactionEnabled,
         zoomGesturesEnabled: widget.interactionEnabled,
         tiltGesturesEnabled: widget.interactionEnabled,
