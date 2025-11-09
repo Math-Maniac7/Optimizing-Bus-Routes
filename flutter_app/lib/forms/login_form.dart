@@ -37,6 +37,47 @@ class _LoginFormState extends State<LoginForm> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
+    void _submitForm() async {
+      String email = emailController.text.trim();
+      String pass = passwordController.text.trim();
+
+      if (_formKey.currentState!.validate()) {
+        try {
+          final credential = await FirebaseAuth.instance
+              .signInWithEmailAndPassword(email: email, password: pass);
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Center(child: Text('Login success!'))),
+            );
+            Future.delayed(const Duration(seconds: 1), () {
+              if (context.mounted) {
+                Navigator.pushNamed(context, '/routes');
+              }
+            });
+          }
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'user-not-found') {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Center(child: Text('This user does not exist.')),
+                ),
+              );
+            }
+          } else if (e.code == 'wrong-password') {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Center(child: Text('Password is incorrect.')),
+                ),
+              );
+            }
+          }
+        }
+      }
+    }
+
     return Scaffold(
       backgroundColor: Color.fromRGBO(57, 103, 136, 1),
       body: Center(
@@ -104,6 +145,9 @@ class _LoginFormState extends State<LoginForm> {
                         ? 'Nothing entered for password.'
                         : null;
                   },
+                  onFieldSubmitted: (value) {
+                    _submitForm();
+                  },
                 ),
               ),
               SizedBox(height: screenHeight * .05),
@@ -135,54 +179,8 @@ class _LoginFormState extends State<LoginForm> {
                         ),
                       ),
                     ),
-                    onPressed: () async {
-                      String email = emailController.text.trim();
-                      String pass = passwordController.text.trim();
-
-                      if (_formKey.currentState!.validate()) {
-                        try {
-                          final credential = await FirebaseAuth.instance
-                              .signInWithEmailAndPassword(
-                                email: email,
-                                password: pass,
-                              );
-
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Center(child: Text('Login success!')),
-                              ),
-                            );
-                            Future.delayed(const Duration(seconds: 1), () {
-                              if (context.mounted) {
-                                Navigator.pushNamed(context, '/routes');
-                              }
-                            });
-                          }
-                        } on FirebaseAuthException catch (e) {
-                          if (e.code == 'user-not-found') {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Center(
-                                    child: Text('This user does not exist.'),
-                                  ),
-                                ),
-                              );
-                            }
-                          } else if (e.code == 'wrong-password') {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Center(
-                                    child: Text('Password is incorrect.'),
-                                  ),
-                                ),
-                              );
-                            }
-                          }
-                        }
-                      }
+                    onPressed: () {
+                      _submitForm();
                     },
                     child: Text(
                       "Log In",

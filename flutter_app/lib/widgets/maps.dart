@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:flutter_app/locations.dart' as locations;
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
@@ -97,6 +96,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final lon = stop['pos']['lon'] as num;
 
       newMarkers[key] = Marker(
+        onTap: () {},
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
