@@ -45,7 +45,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   bool _isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
-  bool _addMarker = false;
+  int _addMarker = 0;
   bool _saveMarkers = false;
   bool _cancelModify = false;
   int _mapReloadKey = 0;
@@ -177,6 +177,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                   isModified: _isModified,
                                   isSaved: _saveMarkers,
                                   cancelModify: _cancelModify,
+                                  addMarker: _addMarker,
                                   interactionEnabled: !_isDrawerOpen,
                                 ),
                               ),
@@ -468,8 +469,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   }
 
   void _onAddMarker() {
-    //TODO
-    setState(() => _addMarker = true);
+    setState(() => _addMarker++);
   }
 
   void _onSave() {

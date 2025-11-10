@@ -7,6 +7,7 @@ class GoogleMaps extends StatefulWidget {
   final bool isModified;
   bool isSaved;
   bool cancelModify;
+  int addMarker;
   final bool interactionEnabled;
 
   GoogleMaps({
@@ -14,6 +15,7 @@ class GoogleMaps extends StatefulWidget {
     required this.isModified,
     required this.isSaved,
     required this.cancelModify,
+    required this.addMarker,
     this.interactionEnabled = true,
   });
 
@@ -168,6 +170,20 @@ class _GoogleMapsState extends State<GoogleMaps> {
   @override
   void didUpdateWidget(covariant GoogleMaps oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.addMarker < widget.addMarker) {
+      final center = _savedCenter ?? const LatLng(30.622405, -96.353055);
+
+      final newStop = {
+        'pos': {'lat': center.latitude, 'lon': center.longitude},
+      };
+
+      setState(() {
+        stops.add(newStop);
+        buildMarkers(stops);
+      });
+    }
+
     if (!oldWidget.isSaved && widget.isSaved) {
       StorageService.saveBusRouteData({'stops': stops});
       buildMarkers(stops);
