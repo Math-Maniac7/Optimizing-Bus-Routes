@@ -50,55 +50,11 @@ bool OSMWay::is_driveable() {
     // Tracks: allow but might weight heavily. 
     // Service roads: also weight heavily. 
 
-    // access blocks
-    if (access == "no" || access == "private") {
-        // explicit override
-        if (mv == "yes" || mc == "yes" || veh == "yes") return true;
-        return false;
-    }
+    // explicitly non-driveable
     if (mv == "no" || mc == "no" || veh == "no") return false;
 
     return true;
 }
-
-// bool OSMWay::is_walkable() {
-//     std::string hw      = tags.contains("highway") ? tags["highway"] : "";
-//     std::string access  = tags.contains("access")  ? tags["access"]  : "";
-//     std::string foot    = tags.contains("foot")    ? tags["foot"]    : "";
-//     std::string sidewalk= tags.contains("sidewalk")? tags["sidewalk"]: "";
-
-//     if (hw.empty() || hw == "construction" || hw == "proposed") return false;
-
-//     // Global bans
-//     if (access == "no" || access == "private") return false;
-//     if (foot == "no") return false;
-
-//     // Motorways are *not* walkable unless explicitly allowed (rare)
-//     if (hw == "motorway" || hw == "motorway_link") {
-//         // allow only if foot is explicitly permitted
-//         return (foot == "yes" || foot == "designated" || foot == "permissive");
-//     }
-
-//     // Always-walkable pedestrian infrastructure
-//     if (hw == "footway" || hw == "path" || hw == "pedestrian" || hw == "steps" || hw == "corridor")
-//         return true;
-
-//     // Sidewalks explicitly indicate pedestrian accommodation
-//     if (sidewalk == "both" || sidewalk == "left" || sidewalk == "right" || sidewalk == "yes")
-//         return true;
-
-//     // The usual road classes are walkable by default unless signed otherwise
-//     // residential / living_street / service / unclassified / track / road /
-//     // primary/secondary/tertiary and their *_link
-//     // (If you want to be stricter, require a sidewalk on primary/secondary.)
-//     return (hw == "residential"    || hw == "living_street" ||
-//             hw == "service"        || hw == "unclassified"  ||
-//             hw == "track"          || hw == "road"          ||
-//             hw == "primary"        || hw == "primary_link"  ||
-//             hw == "secondary"      || hw == "secondary_link"||
-//             hw == "tertiary"       || hw == "tertiary_link" ||
-//             hw == "trunk"          || hw == "trunk_link");
-// }
 
 //strict definition of walkable
 // bool OSMWay::is_walkable() {
@@ -122,6 +78,25 @@ bool OSMWay::is_driveable() {
 // }
 
 // lenient definition of walkable
+// bool OSMWay::is_walkable() {
+//     std::string hw = tags.contains("highway") ? tags["highway"] : "";
+//     std::string access = tags.contains("access") ? tags["access"] : "";
+//     std::string foot = tags.contains("foot") ? tags["foot"] : "";
+
+//     if (hw.empty()) return false;
+//     if (hw == "construction" || hw == "proposed") return false;
+
+//     // default: pedestrians allowed unless explicitly forbidden on motorways
+//     if (hw == "motorway" || hw == "motorway_link")
+//         return foot == "yes"; // only if explicitly allowed
+
+//     // is footpath explicitly blocked
+//     if (foot == "no" || access == "no" || access == "private") return false;
+
+//     return true;
+// }
+
+//extremely lenient definition of walkable
 bool OSMWay::is_walkable() {
     std::string hw = tags.contains("highway") ? tags["highway"] : "";
     std::string access = tags.contains("access") ? tags["access"] : "";
@@ -130,12 +105,8 @@ bool OSMWay::is_walkable() {
     if (hw.empty()) return false;
     if (hw == "construction" || hw == "proposed") return false;
 
-    // default: pedestrians allowed unless explicitly forbidden on motorways
-    if (hw == "motorway" || hw == "motorway_link")
-        return foot == "yes"; // only if explicitly allowed
-
     // is footpath explicitly blocked
-    if (foot == "no" || access == "no" || access == "private") return false;
+    if (foot == "no") return false;
 
     return true;
 }
