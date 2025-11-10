@@ -42,9 +42,12 @@ class RouteOptimization extends StatefulWidget {
 class _RouteOptimizationState extends State<RouteOptimization> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Phase? selectedPhase = Phase.phaseOne; // Default to Phase 1
-  bool isModified = false;
+  bool _isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
+  bool _addMarker = false;
+  bool _saveMarkers = false;
+  bool _cancelModify = false;
   int _mapReloadKey = 0;
 
   @override
@@ -71,7 +74,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  isModified ? 'Edit Mode' : 'Bus Route Optimizer',
+                  _isModified ? 'Edit Mode' : 'Bus Route Optimizer',
                   style: GoogleFonts.quicksand(
                     fontSize: 70,
                     fontWeight: FontWeight.w700,
@@ -87,7 +90,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            if (!isModified) ...[
+                            if (!_isModified) ...[
                               _buildSideButton("Add Locations", screenWidth),
                               SizedBox(height: screenHeight * 0.02),
                               _buildSideButton("Generate Routes", screenWidth),
@@ -146,6 +149,9 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
+
+                                    SizedBox(height: screenHeight * 0.02),
+                                    _buildSideButton("Add Marker", screenWidth),
                                     SizedBox(height: screenHeight * 0.02),
                                     _buildSideButton("Save", screenWidth),
                                     SizedBox(height: screenHeight * 0.02),
@@ -168,12 +174,14 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                 absorbing: _isDrawerOpen,
                                 child: GoogleMaps(
                                   key: ValueKey(_mapReloadKey),
-                                  isModified: isModified,
+                                  isModified: _isModified,
+                                  isSaved: _saveMarkers,
+                                  cancelModify: _cancelModify,
                                   interactionEnabled: !_isDrawerOpen,
                                 ),
                               ),
                             ),
-                            if (isModified)
+                            if (_isModified)
                               IgnorePointer(
                                 child: Container(
                                   decoration: BoxDecoration(
@@ -266,6 +274,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
             _onSave();
           } else if (text == "Cancel") {
             _onCancel();
+          } else if (text == "Add Marker") {
+            _onAddMarker();
           }
         },
         child: Text(
@@ -451,16 +461,32 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
   void _onModify() {
     debugPrint("Modify button pressed");
-    setState(() => isModified = true);
+    setState(() {
+      _isModified = true;
+      _cancelModify = false;
+    });
+  }
+
+  void _onAddMarker() {
+    //TODO
+    setState(() => _addMarker = true);
   }
 
   void _onSave() {
     debugPrint("Save button pressed");
-    // TODO: add save logic
+    setState(() {
+      _saveMarkers = true;
+      _isModified = false;
+    });
   }
 
   void _onCancel() {
     debugPrint("Cancel button pressed");
-    setState(() => isModified = false);
+
+    setState(() {
+      _cancelModify = true;
+      _isModified = false;
+      _saveMarkers = false;
+    });
   }
 }

@@ -1,5 +1,4 @@
 //It's deprecated but it works, so
-import 'dart:js_util' as util;
 import 'dart:js' as js;
 
 Future<String> phase_1(String input) async {

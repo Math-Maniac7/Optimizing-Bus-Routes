@@ -37,7 +37,7 @@ class _LoginFormState extends State<LoginForm> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    void _submitForm() async {
+    void submitForm() async {
       String email = emailController.text.trim();
       String pass = passwordController.text.trim();
 
@@ -146,7 +146,7 @@ class _LoginFormState extends State<LoginForm> {
                         : null;
                   },
                   onFieldSubmitted: (value) {
-                    _submitForm();
+                    submitForm();
                   },
                 ),
               ),
@@ -180,7 +180,7 @@ class _LoginFormState extends State<LoginForm> {
                       ),
                     ),
                     onPressed: () {
-                      _submitForm();
+                      submitForm();
                     },
                     child: Text(
                       "Log In",

@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_maps_custom_marker/google_maps_custom_marker.dart';
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
+  bool isSaved;
+  bool cancelModify;
   final bool interactionEnabled;
 
-  const GoogleMaps({
+  GoogleMaps({
     super.key,
     required this.isModified,
+    required this.isSaved,
+    required this.cancelModify,
     this.interactionEnabled = true,
   });
 
@@ -23,6 +28,31 @@ class _GoogleMapsState extends State<GoogleMaps> {
   List<dynamic> stops = [];
   LatLng? _savedCenter;
   double? _savedZoom;
+  late BitmapDescriptor idleIcon;
+  late BitmapDescriptor dragIcon;
+  List<dynamic>? _originalStops;
+
+  Future<void> initIcons() async {
+    final base = Marker(
+      markerId: const MarkerId('tmp'),
+      position: LatLng(0, 0),
+    );
+
+    final idleMarker = await GoogleMapsCustomMarker.createCustomMarker(
+      marker: base,
+      shape: MarkerShape.pin,
+    );
+
+    idleIcon = idleMarker.icon;
+
+    final dragMarker = await GoogleMapsCustomMarker.createCustomMarker(
+      marker: base,
+      shape: MarkerShape.pin,
+      backgroundColor: Colors.blue,
+    );
+
+    dragIcon = dragMarker.icon;
+  }
 
   void _fitToMarkers() async {
     if (_markers.isEmpty) return;
@@ -73,6 +103,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   Future<void> _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
+    await initIcons();
     if (StorageService.hasBusRouteData()) {
       final jsonData = StorageService.getBusRouteData();
       if (jsonData != null && jsonData['stops'] != null) {
@@ -84,10 +115,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   void buildMarkers(List<dynamic> stops) async {
     final newMarkers = <String, Marker>{};
-    final assetBitmap = await BitmapDescriptor.asset(
-      const ImageConfiguration(size: Size(27, 40)),
-      'assets/blue_marker.png',
-    );
 
     for (final stop in stops) {
       id += 1;
@@ -100,26 +127,26 @@ class _GoogleMapsState extends State<GoogleMaps> {
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
+        icon: idleIcon,
         onDragStart: (position) {
           setState(() {
-            _markers[key] = _markers[key]!.copyWith(iconParam: assetBitmap);
+            _markers[key] = _markers[key]!.copyWith(iconParam: dragIcon);
           });
-          // debugPrint('Drag started at: $position');
         },
         onDrag: (position) {
           setState(() {
-            _markers[key] = _markers[key]!.copyWith(
-              iconParam: assetBitmap,
-              // positionParam: LatLng(position.latitude, position.longitude),
-            );
+            _markers[key] = _markers[key]!.copyWith(iconParam: dragIcon);
           });
         },
         onDragEnd: (position) {
           setState(() {
             _markers[key] = _markers[key]!.copyWith(
               positionParam: LatLng(position.latitude, position.longitude),
-              iconParam: BitmapDescriptor.defaultMarker,
+              iconParam: idleIcon,
             );
+
+            stop['pos']['lat'] = position.latitude;
+            stop['pos']['lon'] = position.longitude;
           });
         },
       );
@@ -141,20 +168,39 @@ class _GoogleMapsState extends State<GoogleMaps> {
   @override
   void didUpdateWidget(covariant GoogleMaps oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.isModified != widget.isModified) {
-      final updatedMarkers = <String, Marker>{};
-      _markers.forEach((key, marker) {
-        updatedMarkers[key] = marker.copyWith(
-          draggableParam: widget.isModified,
-        );
-      });
-
-      setState(() {
-        _markers
-          ..clear()
-          ..addAll(updatedMarkers);
-      });
+    if (!oldWidget.isSaved && widget.isSaved) {
+      StorageService.saveBusRouteData({'stops': stops});
+      buildMarkers(stops);
     }
+
+    if (!oldWidget.isModified && widget.isModified) {
+      _originalStops = stops
+          .map(
+            (s) => {
+              ...s,
+              'pos': {'lat': s['pos']['lat'], 'lon': s['pos']['lon']},
+            },
+          )
+          .toList();
+    }
+
+    if (!oldWidget.cancelModify && widget.cancelModify) {
+      if (_originalStops != null) {
+        stops = List.from(_originalStops!);
+        buildMarkers(stops);
+      }
+    }
+
+    final updatedMarkers = <String, Marker>{};
+    _markers.forEach((key, marker) {
+      updatedMarkers[key] = marker.copyWith(draggableParam: widget.isModified);
+    });
+
+    setState(() {
+      _markers
+        ..clear()
+        ..addAll(updatedMarkers);
+    });
   }
 
   @override
