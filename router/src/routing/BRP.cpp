@@ -14,7 +14,8 @@ BRP::BRP(
     std::vector<Bus*> _buses, 
     std::optional<std::vector<BusStop*>> _stops,
     std::optional<std::vector<BusStopAssignment*>> _assignments,
-    std::optional<std::vector<BusRoute*>> _routes
+    std::optional<std::vector<BusRoute*>> _routes,
+    std::optional<Graph*> _graph
 ) {
     school = _school;
     bus_yard = _bus_yard;
@@ -23,6 +24,7 @@ BRP::BRP(
     stops = _stops;
     assignments = _assignments;
     routes = _routes;
+    graph = _graph;
 }
 
 BRP* BRP::parse(json& j) {
@@ -59,13 +61,18 @@ BRP* BRP::parse(json& j) {
         }
     }
 
-    std::optional<std::vector<BusRoute*>> routes;
+    std::optional<std::vector<BusRoute*>> routes = std::nullopt;
     if(j.contains("routes")) {
         if(!j["routes"].is_array()) throw std::runtime_error("BRP malformed routes");
         routes = std::vector<BusRoute*>();
         for(int i = 0; i < j["routes"].size(); i++) {
             routes.value().push_back(BusRoute::parse(j["routes"][i]));
         }
+    }
+
+    std::optional<Graph*> graph = std::nullopt;
+    if(j.contains("graph")) {
+        graph = Graph::parse(j["graph"]);
     }
     
     return new BRP( 
@@ -75,7 +82,8 @@ BRP* BRP::parse(json& j) {
         buses,
         stops,
         assignments,
-        routes
+        routes,
+        graph
     );
 }
 
@@ -118,6 +126,10 @@ json BRP::to_json() {
         ret["routes"] = routes_json;
     }
 
+    if(this->graph.has_value()) {
+        ret["graph"] = graph.value()->to_json();
+    }
+
     return ret;
 }
 
@@ -143,6 +155,10 @@ BRP* BRP::make_copy() {
         _routes = std::vector<BusRoute*>();
         for(int i = 0; i < routes.value().size(); i++) _routes.value().push_back(routes.value()[i]->make_copy());
     }
+    std::optional<Graph*> _graph = std::nullopt;
+    if(graph.has_value()) {
+        _graph = graph.value()->make_copy();
+    }
 
     return new BRP( 
         _school,
@@ -151,7 +167,8 @@ BRP* BRP::make_copy() {
         _buses,
         _stops,
         _assignments,
-        _routes
+        _routes,
+        _graph
     );
 }
 
@@ -177,7 +194,7 @@ json BRP::to_geojson() {
             {"type", "Feature"},
             {"properties", {
                 {"name", "school"},
-                {"marker-size", "medium"}
+                {"marker-size", "large"}
             }},
             {"geometry", {
                 {"type", "Point"},
@@ -186,17 +203,17 @@ json BRP::to_geojson() {
         };
         features.push_back(feature);
     }
-    
-    //bus stops
-    if(this->stops.has_value() && !this->assignments.has_value()) {
-        for(int i = 0; i < this->stops.value().size(); i++) {
-            BusStop *stop = this->stops.value()[i];
-            Coordinate *pos = stop->pos;
+
+    //students
+    if(!this->assignments.has_value()) {
+        for(int i = 0; i < this->students.size(); i++) {
+            Student *student = this->students[i];
+            Coordinate *pos = student->pos;
 
             json feature = {
                 {"type", "Feature"},
                 {"properties", {
-                    {"name", "stop " + std::to_string(stop->id)},
+                    {"name", "student " + std::to_string(student->id)},
                     {"marker-size", "small"}
                 }},
                 {"geometry", {
@@ -205,6 +222,50 @@ json BRP::to_geojson() {
                 }}
             };
             features.push_back(feature);
+        }
+    }
+    
+    //bus stops
+    if(this->stops.has_value() && !this->assignments.has_value()) {
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            BusStop *stop = this->stops.value()[i];
+            Coordinate *pos = stop->pos;
+
+            {
+                json feature = {
+                    {"type", "Feature"},
+                    {"properties", {
+                        {"name", "stop " + std::to_string(stop->id)},
+                        {"marker-size", "medium"}
+                    }},
+                    {"geometry", {
+                        {"type", "Point"},
+                        {"coordinates", {pos->lon, pos->lat}}
+                    }}
+                };
+                features.push_back(feature);
+            }
+            
+            for(int j = 0; j < stop->students.size(); j++) {
+                Student *student = this->get_student(stop->students[j]);
+                Coordinate *spos = student->pos;
+
+                json coords = json::array();
+                coords.push_back({spos->lon, spos->lat});
+                coords.push_back({pos->lon, pos->lat});
+
+                json feature = {
+                    {"type", "Feature"},
+                    {"properties", {
+                        {"name", "bus stop assignment"}
+                    }},
+                    {"geometry", {
+                        {"type", "LineString"},
+                        {"coordinates", coords}
+                    }}
+                };
+                features.push_back(feature);
+            }
         }
     }
 
@@ -222,7 +283,7 @@ json BRP::to_geojson() {
                     {"type", "Feature"},
                     {"properties", {
                         {"name", "stop " + std::to_string(stop->id)},
-                        {"marker-size", "small"},
+                        {"marker-size", "medium"},
                         {"marker-color", color}
                     }},
                     {"geometry", {
@@ -515,7 +576,7 @@ void BRP::validate() {
 }
 
 Graph* BRP::create_graph() {
-    if(this->graph != nullptr) return this->graph;
+    if(this->graph.has_value()) return this->graph.value();
 
     ld min_lat = std::min(school->lat, bus_yard->lat), max_lat = std::max(school->lat, bus_yard->lat);
     ld min_lon = std::min(school->lon, bus_yard->lon), max_lon = std::max(school->lon, bus_yard->lon);
@@ -534,7 +595,7 @@ Graph* BRP::create_graph() {
     max_lon += 0.07;
 
     this->graph = utils::create_graph(min_lat, min_lon, max_lat, max_lon);
-    return this->graph;
+    return this->graph.value();
 }
 /*
 void BRP::do_p1() {

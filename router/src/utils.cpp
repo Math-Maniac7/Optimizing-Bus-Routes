@@ -63,7 +63,7 @@ namespace utils {
                 for(std::string s : types) std::cout << s << "\n";
             }
 
-            Graph* g = Graph::parse(j);
+            Graph* g = Graph::parse_osm(j);
             std::cout << "GRAPH : " << g->nodes.size() << "\n";
 
             return g;
