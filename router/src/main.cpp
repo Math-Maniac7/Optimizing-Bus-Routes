@@ -230,7 +230,8 @@ int main(){
 int main(int argc, char* argv[]) {
     if(argc < 3) {
         std::cout << "Usage : \n";
-        std::cout << "<p1 | p2 | p3> <in_file>\n";  //TODO add <out_file>
+        std::cout << "<p1 | p2 | p3> <in_file>\n";
+        std::cout << "-o <out_file>\n";
         std::cout << "-geojson : returns a geojson representation of the resulting BRP\n";
         return 1;
     }
@@ -263,10 +264,18 @@ int main(int argc, char* argv[]) {
     //parse other flags
     bool to_geojson = false;
     int argptr = 3;
+    std::string outfile = "";
     while(argptr != argc) {
         std::string next(argv[argptr ++]);
         if(next == "-geojson") {
             to_geojson = true;
+        }
+        else if(next == "-o") {
+            if(argptr == argc) {
+                std::cout << "Missing outfile\n";
+                return 1;
+            }
+            outfile = std::string(argv[argptr ++]);
         }
         else {
             std::cout << "Unknown flag : " + next << "\n";
@@ -335,7 +344,15 @@ int main(int argc, char* argv[]) {
     else {
         output = brp->to_json();
     }
-    std::cout << output << "\n";
+
+    if(outfile != "") {
+        std::ofstream fout(outfile);
+        fout << output << "\n";
+        fout.close();
+    }   
+    else {
+        std::cout << output << "\n";
+    }
 
     return 0;
 }

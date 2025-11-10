@@ -270,7 +270,7 @@ json BRP::to_geojson() {
     }
 
     //bus assignments
-    if(!this->routes.has_value() && this->assignments.has_value()) {
+    if(this->assignments.has_value()) {
         assert(this->stops.has_value());
         for(int i = 0; i < this->assignments.value().size(); i++) {
             BusStopAssignment *assignment = this->assignments.value()[i];
