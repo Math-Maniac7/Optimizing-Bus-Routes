@@ -308,3 +308,27 @@ std::string url_encode(const std::string& s) {
 }
 
 #endif
+
+HttpResponse http_request_retry(
+    const std::string& url,
+    const std::string& method,
+    const std::string& body,
+    const std::vector<std::string>& headers,
+    long timeout,
+    long connect_timeout,
+    bool follow_redirects,
+    const char* user_agent,
+    const std::vector<int> retry_status,
+    const int retry_count
+) {
+    HttpResponse res;
+    for(int i = 0; i < retry_count; i++) {
+        res = http_request(url, method, body, headers, timeout, connect_timeout, follow_redirects, user_agent);
+        for(int s : retry_status) if(res.status == s) {
+            std::cout << "Retrying HTTP request : " << method << " " << url << std::endl;
+            continue;
+        }
+        break;
+    }
+    return res;
+}
