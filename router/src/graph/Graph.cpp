@@ -9,7 +9,8 @@ ld calc_dist(Coordinate* a, Coordinate* b) {
     ld dlat = b->lat - a->lat;
     ld dlon = b->lon - a->lon;
     ld inner = 1.0 - cos(deg_to_rad(dlat)) + cos(deg_to_rad(a->lat)) * cos(deg_to_rad(b->lat)) * (1.0 - cos(deg_to_rad(dlon)));
-    return 2.0 * EARTH_RADIUS * asin(sqrt(inner / 2.0));
+    // return 2.0 * EARTH_RADIUS_MI * asin(sqrt(inner / 2.0));
+    return 2.0 * (1000 * EARTH_RADIUS_KM) * asin(sqrt(inner / 2.0));
 }
 
 OSMNode* OSMNode::parse(json& j) {
@@ -49,36 +50,32 @@ bool OSMWay::is_driveable() {
     // Tracks: allow but might weight heavily. 
     // Service roads: also weight heavily. 
 
-    // access blocks
-    if (access == "no" || access == "private") {
-        // explicit override
-        if (mv == "yes" || mc == "yes" || veh == "yes") return true;
-        return false;
-    }
+    // explicitly non-driveable
     if (mv == "no" || mc == "no" || veh == "no") return false;
 
     return true;
 }
 
-bool OSMWay::is_walkable() {
-    std::string hw = tags.contains("highway") ? tags["highway"] : "";
-    std::string access = tags.contains("access") ? tags["access"] : "";
-    std::string foot = tags.contains("foot") ? tags["foot"] : "";
-    std::string footway = tags.contains("footway") ? tags["footway"] : "";
+//strict definition of walkable
+// bool OSMWay::is_walkable() {
+//     std::string hw = tags.contains("highway") ? tags["highway"] : "";
+//     std::string access = tags.contains("access") ? tags["access"] : "";
+//     std::string foot = tags.contains("foot") ? tags["foot"] : "";
+//     std::string footway = tags.contains("footway") ? tags["footway"] : "";
 
-    if (hw.empty() || hw == "construction" || hw == "proposed") return false;
+//     if (hw.empty() || hw == "construction" || hw == "proposed") return false;
 
-    // explicit bans
-    if (foot == "no" || access == "no" || access == "private") return false;
+//     // explicit bans
+//     if (foot == "no" || access == "no" || access == "private") return false;
 
-    // motorways only if explicitly allowed
-    if (hw == "motorway" || hw == "motorway_link") return foot == "yes";
+//     // motorways only if explicitly allowed
+//     if (hw == "motorway" || hw == "motorway_link") return foot == "yes";
 
-    // pedestrian infrastructure
-    if (hw == "footway" || hw == "path" || hw == "pedestrian" || hw == "steps" || hw == "track" || hw == "corridor") return true;
+//     // pedestrian infrastructure
+//     if (hw == "footway" || hw == "path" || hw == "pedestrian" || hw == "steps" || hw == "track" || hw == "corridor") return true;
 
-    return false;
-}
+//     return false;
+// }
 
 // lenient definition of walkable
 // bool OSMWay::is_walkable() {
@@ -98,6 +95,21 @@ bool OSMWay::is_walkable() {
 
 //     return true;
 // }
+
+//extremely lenient definition of walkable
+bool OSMWay::is_walkable() {
+    std::string hw = tags.contains("highway") ? tags["highway"] : "";
+    std::string access = tags.contains("access") ? tags["access"] : "";
+    std::string foot = tags.contains("foot") ? tags["foot"] : "";
+
+    if (hw.empty()) return false;
+    if (hw == "construction" || hw == "proposed") return false;
+
+    // is footpath explicitly blocked
+    if (foot == "no") return false;
+
+    return true;
+}
 
 int OSMWay::drive_dir() {
     std::string ow = tags.contains("oneway") ? tags["oneway"] : "";
@@ -140,7 +152,61 @@ int OSMWay::walk_dir() {
     return 0;
 }
 
-Graph* Graph::parse(json& j) {
+Node* Node::parse(json& j) {
+    if(!j.contains("id")) throw std::runtime_error("Node missing id");
+    if(!j.contains("coord")) throw std::runtime_error("Node missing coord");
+    if(!j.contains("is_walkable")) throw std::runtime_error("Node missing is_walkable");
+    if(!j.contains("is_driveable")) throw std::runtime_error("Node missing is_driveable");
+    ll id = j["id"];
+    Coordinate *coord = Coordinate::parse(j["coord"]);
+    bool is_walkable = j["is_walkable"];
+    bool is_driveable = j["is_driveable"];
+    return new Node(id, coord, is_walkable, is_driveable);
+}
+
+json Node::to_json() {
+    json ret;
+    ret["id"] = id;
+    ret["coord"] = coord->to_json();
+    ret["is_walkable"] = is_walkable;
+    ret["is_driveable"] = is_driveable;
+    return ret;
+}   
+
+Node* Node::make_copy() {
+    return new Node(id, coord->make_copy(), is_walkable, is_driveable);
+}
+
+Edge* Edge::parse(json& j) {
+    if(!j.contains("u")) throw std::runtime_error("Edge missing u");
+    if(!j.contains("v")) throw std::runtime_error("Edge missing v");
+    if(!j.contains("dist")) throw std::runtime_error("Edge missing dist");
+    if(!j.contains("speed_limit")) throw std::runtime_error("Edge missing speed_limit");
+    if(!j.contains("is_walkable")) throw std::runtime_error("Edge mising is_walkable");
+    if(!j.contains("is_driveable")) throw std::runtime_error("Edge missing is_driveable");
+    ll u = j["u"], v = j["v"];
+    ld dist = j["dist"], speed_limit = j["speed_limit"];
+    bool is_walkable = j["is_walkable"];
+    bool is_driveable = j["is_driveable"];
+    return new Edge(u, v, dist, speed_limit, is_driveable, is_walkable);
+}
+
+json Edge::to_json() {
+    json ret;
+    ret["u"] = u;
+    ret["v"] = v;
+    ret["dist"] = dist;
+    ret["speed_limit"] = speed_limit;
+    ret["is_walkable"] = is_walkable;
+    ret["is_driveable"] = is_driveable;
+    return ret;
+}
+
+Edge* Edge::make_copy() {
+    return new Edge(u, v, dist, speed_limit, is_driveable, is_walkable);
+}
+
+Graph* Graph::parse_osm(json& j) {
     std::map<ll, OSMNode*> osm_nodes;
     std::map<ll, OSMWay*> osm_ways;
     for(auto& [key, value] : j["elements"].items()) {
@@ -169,7 +235,7 @@ Graph* Graph::parse(json& j) {
             OSMNode *node = i->second;
             assert(node_inds.count(id) == 0);
             node_inds.insert({id, ptr});
-            nodes.push_back(new Node(node->coord->lat, node->coord->lon));
+            nodes.push_back(new Node(nodes.size(), new Coordinate(node->coord->lat, node->coord->lon)));
             ptr ++;
         }
     }
@@ -212,8 +278,6 @@ Graph* Graph::parse(json& j) {
     }
 
     Graph *g = new Graph();
-    g->osm_nodes = osm_nodes;
-    g->osm_ways = osm_ways;
     g->nodes = nodes;
     g->adj = adj;
     g->dist_walk = std::vector<std::vector<ld>>(nodes.size());
@@ -223,6 +287,112 @@ Graph* Graph::parse(json& j) {
 
     return g;
 }
+
+Graph* Graph::parse(json& j) {
+    if(!j.contains("nodes")) throw std::runtime_error("Graph missing nodes");
+    if(!j.contains("adj")) throw std::runtime_error("Graph missing edges");
+    if(!j.contains("dist_walk")) throw std::runtime_error("Graph missing dist_walk");
+    if(!j.contains("dist_drive")) throw std::runtime_error("Graph missing dist_drive");
+    if(!j.contains("prev_walk")) throw std::runtime_error("Graph missing prev_walk");
+    if(!j.contains("prev_drive")) throw std::runtime_error("Graph missing prev_drive");
+    std::vector<Node*> nodes;
+    for(int i = 0; i < j["nodes"].size(); i++) {
+        nodes.push_back(Node::parse(j["nodes"][i]));
+    }
+    int n = nodes.size();
+    std::vector<std::vector<Edge*>> adj(n);
+    for(int i = 0; i < j["adj"].size(); i++) {
+        for(int k = 0; k < j["adj"][i].size(); k++) {
+            adj[i].push_back(Edge::parse(j["adj"][i][k]));
+        }
+    }
+    std::vector<std::vector<ld>> dist_walk, dist_drive;
+    std::vector<std::vector<int>> prev_walk, prev_drive;
+    dist_walk = j["dist_walk"];
+    dist_drive = j["dist_drive"];
+    prev_walk = j["prev_walk"];
+    prev_drive = j["prev_drive"];
+
+    //some checks
+    if(adj.size() != n) throw std::runtime_error("Graph adj must be of size n");
+    if(dist_walk.size() != n) throw std::runtime_error("Graph dist_walk must be of size n");
+    if(dist_drive.size() != n) throw std::runtime_error("Graph dist_drive must be of size n");
+    if(prev_walk.size() != n) throw std::runtime_error("Graph prev_walk must be of size n");
+    if(prev_drive.size() != n) throw std::runtime_error("Graph prev_drive must be of size n");
+    
+    for(int i = 0; i < n; i++) {
+        if(nodes[i]->id != i) throw std::runtime_error("Graph node id must match ind");
+    }
+    for(int i = 0; i < n; i++) {
+        for(int k = 0; k < adj[i].size(); k++) {
+            if(adj[i][k]->u != i) throw std::runtime_error("Graph edge u must match ind");
+        }
+    }   
+    for(int i = 0; i < n; i++) {
+        if(dist_walk[i].size() != 0 && dist_walk[i].size() != n) throw std::runtime_error("Graph dist_walk must be either populated or not populated");
+        if(dist_drive[i].size() != 0 && dist_drive[i].size() != n) throw std::runtime_error("Graph dist_drive must be either populated or not populated");
+        if(prev_walk[i].size() != 0 && prev_walk[i].size() != n) throw std::runtime_error("Graph prev_walk must be either populated or not populated");
+        if(prev_drive[i].size() != 0 && prev_drive[i].size() != n) throw std::runtime_error("Graph prev_drive must be either populated or not populated");
+    }
+
+    Graph* g = new Graph();
+    g->nodes = nodes;
+    g->adj = adj;
+    g->dist_walk = dist_walk;
+    g->dist_drive = dist_drive;
+    g->prev_walk = prev_walk;
+    g->prev_drive = prev_drive;
+
+    return g;
+}
+
+json Graph::to_json() {
+    int n = this->nodes.size();
+    std::vector<json> nodes_json;
+    for(int i = 0; i < n; i++) {
+        nodes_json.push_back(this->nodes[i]->to_json());
+    }
+    std::vector<std::vector<json>> adj_json(n);
+    for(int i = 0; i < n; i++) {
+        for(int k = 0; k < this->adj[i].size(); k++) {
+            adj_json[i].push_back(this->adj[i][k]->to_json());
+        }
+    }
+
+    json ret;
+    ret["nodes"] = nodes_json;
+    ret["adj"] = adj_json;
+    ret["dist_walk"] = dist_walk;
+    ret["dist_drive"] = dist_drive;
+    ret["prev_walk"] = prev_walk;
+    ret["prev_drive"] = prev_drive;
+
+    return ret;
+}
+
+Graph* Graph::make_copy() {
+    int n = this->nodes.size();
+    std::vector<Node*> _nodes(n);
+    for(int i = 0; i < n; i++) {
+        _nodes[i] = this->nodes[i]->make_copy();
+    }
+    std::vector<std::vector<Edge*>> _adj(n);
+    for(int i = 0; i < n; i++) {
+        for(int j = 0; j < this->adj[i].size(); j++) {
+            _adj[i].push_back(this->adj[i][j]->make_copy());
+        }
+    }
+    
+    Graph *g = new Graph();
+    g->nodes = _nodes;
+    g->adj = _adj;
+    g->dist_walk = dist_walk;
+    g->dist_drive = dist_drive;
+    g->prev_walk = prev_walk;
+    g->prev_drive = prev_drive;
+    
+    return g;
+}   
 
 //single source shortest path
 //TODO 

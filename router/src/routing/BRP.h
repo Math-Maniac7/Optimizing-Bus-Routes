@@ -29,7 +29,7 @@ struct BRP {
     std::optional<std::vector<BusRoute*>> routes;
 
     //road graph
-    Graph* graph = nullptr;
+    std::optional<Graph*> graph;
 
     BRP(
         Coordinate* school, 
@@ -38,7 +38,8 @@ struct BRP {
         std::vector<Bus*> buses, 
         std::optional<std::vector<BusStop*>> stops,
         std::optional<std::vector<BusStopAssignment*>> assignments,
-        std::optional<std::vector<BusRoute*>> routes
+        std::optional<std::vector<BusRoute*>> routes,
+        std::optional<Graph*> graph
     );
 
     static BRP* parse(json& j);

@@ -11,8 +11,6 @@
 #include <vector>
 #include <stdexcept>
 
-// TODO add auto-retry on some specific status codes
-
 struct HttpResponse {
     long status = 0;                     // HTTP status code
     std::string body;                    // response body
@@ -39,3 +37,15 @@ HttpResponse http_request(
 
 std::string url_encode(const std::string& s);
 
+HttpResponse http_request_retry(
+    const std::string& url,
+    const std::string& method = "GET",
+    const std::string& body = "",
+    const std::vector<std::string>& headers = {},
+    long timeout = 60,
+    long connect_timeout = 10,
+    bool follow_redirects = true,
+    const char* user_agent = "cpp-libcurl/1.0",
+    const std::vector<int> retry_status = {},
+    const int retry_count = 5
+);
