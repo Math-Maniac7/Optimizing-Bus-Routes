@@ -161,7 +161,8 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
     return cstr;
 }
 
-extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str) {
+extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str, char** json_out) {
+    *json_out = 0;
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
         return "error parsing/validating brp";
@@ -181,12 +182,18 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str) {
     json output = brp->to_geojson();
     std::string output_str = to_string(output);
 
-    char* cstr = (char*) malloc(output_str.size());
+    //char* cstr = (char*) malloc(output_str.size());
+    //memcpy(cstr, output_str.c_str(), output_str.size());
+    char* cstr = (char*) malloc(output_str.size() + 1); // +1 for '\0'
     memcpy(cstr, output_str.c_str(), output_str.size());
+    cstr[output_str.size()] = '\0';
+    *json_out = cstr;
+
     return cstr;
 }
 
-extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str) {
+extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str, char** json_out) {
+    *json_out = 0;
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
         return "error parsing/validating brp";
@@ -206,8 +213,13 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str) {
     json output = brp->to_geojson();
     std::string output_str = to_string(output);
 
-    char* cstr = (char*) malloc(output_str.size());
+    //char* cstr = (char*) malloc(output_str.size());
+    //memcpy(cstr, output_str.c_str(), output_str.size());
+    char* cstr = (char*) malloc(output_str.size() + 1); // +1 for '\0'
     memcpy(cstr, output_str.c_str(), output_str.size());
+    cstr[output_str.size()] = '\0';
+    *json_out = cstr;
+
     return cstr;
 }
 
