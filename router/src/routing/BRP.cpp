@@ -6,6 +6,7 @@
 #include "../utils.h"
 #include "../algorithm/mcmf.h"
 #include "../algorithm/dbscan.h"
+#include "../algorithm/dsu.h"
 
 BRP::BRP(
     Coordinate* _school, 
@@ -129,6 +130,8 @@ json BRP::to_json() {
     if(this->graph.has_value()) {
         ret["graph"] = graph.value()->to_json();
     }
+
+    ret["evals"] = this->evals;
 
     return ret;
 }
@@ -916,7 +919,7 @@ void BRP::do_p3() {
         int m = assignment->stops.size();
         if(m == 0) {
             //this bus doesn't have any stops
-            this->routes.value().push_back(new BusRoute(i, assignment->id, {}, {}));
+            this->routes.value().push_back(new BusRoute(i, assignment->id, {}, {}, 0));
             continue;
         }
 
@@ -1073,8 +1076,169 @@ void BRP::do_p3() {
             paths[m] = path;
         }
 
-        this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops, paths));
+        this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops, paths, best_dist));
     }
     
     assert(this->assignments.value().size() == this->routes.value().size());
+}
+
+void BRP::do_eval() {
+    Graph *graph = this->create_graph();
+    std::map<std::string, ld> eval;
+    
+    if(this->stops.has_value()) {
+        std::map<bsid_t, int> stop_graphindmp;
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            BusStop *stop = this->stops.value()[i];
+            stop_graphindmp[stop->id] = graph->get_node(this->stops.value()[i]->pos, true);
+        }
+
+        std::map<sid_t, int> student_graphindmp;
+        for(int i = 0; i < this->students.size(); i++) {
+            Student *s = this->students[i];
+            student_graphindmp[s->id] = graph->get_node(s->pos, true);
+        }
+
+        std::map<sid_t, bsid_t> student_stopmp;
+        std::map<sid_t, ld> student_distmp;
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            BusStop *stop = this->stops.value()[i];
+            for(sid_t id : stop->students) {
+                assert(!student_stopmp.count(id));
+                student_stopmp[id] = stop->id;
+                student_distmp[id] = graph->get_dist(student_graphindmp[id], stop_graphindmp[stop->id], true);
+            }
+        }
+
+        //average student walk time
+        ld avg_student_walk_time = 0;
+        for(int i = 0; i < this->students.size(); i++) {
+            Student *s = this->students[i];
+            avg_student_walk_time += student_distmp[s->id];
+        }
+        avg_student_walk_time /= this->students.size();
+        eval["avg_student_walk_time"] = avg_student_walk_time;
+
+        //average per-stop maximum student walk time
+        ld avg_per_stop_max_walk_time = 0;
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            ld max_walk = 0;
+            BusStop *stop = this->stops.value()[i];
+            for(sid_t id : stop->students) {
+                max_walk = std::max(max_walk, student_distmp[id]);
+            }
+            avg_per_stop_max_walk_time += max_walk;
+        }
+        avg_per_stop_max_walk_time /= this->stops.value().size();
+        eval["avg_per_stop_max_walk_time"] = avg_per_stop_max_walk_time;
+
+        //number of stops
+        eval["nr_stops"] = this->stops.value().size();
+    }
+
+    if(this->assignments.has_value()) {
+        assert(this->stops.has_value());
+
+        std::map<bsaid_t, bid_t> assignment_busmp;
+        std::map<bid_t, ld> bus_loadmp;
+        for(int i = 0; i < this->assignments.value().size(); i++) {
+            BusStopAssignment *assignment = this->assignments.value()[i];
+            assignment_busmp[assignment->id] = assignment->bus;
+            for(bsid_t stop_id : assignment->stops) {
+                BusStop *stop = this->get_stop(stop_id);
+                bus_loadmp[assignment->bus] += stop->students.size();
+            }
+        }
+
+        std::map<bsid_t, int> stop_graphindmp;
+        for(int i = 0; i < this->stops.value().size(); i++) {
+            BusStop *stop = this->stops.value()[i];
+            stop_graphindmp[stop->id] = graph->get_node(this->stops.value()[i]->pos, true);
+        }
+
+        //average assignment compactness
+        ld avg_assignment_compactness = 0;
+        for(int i = 0; i < this->assignments.value().size(); i++) {
+            //compute MST for compactness score
+            BusStopAssignment *assignment = this->assignments.value()[i];
+            int n = assignment->stops.size();
+            std::vector<bsid_t> stops;
+            for(bsid_t id : assignment->stops) stops.push_back(id);
+
+            // - compute all pairwise distances
+            std::vector<std::pair<ld, std::pair<int, int>>> e;
+            for(int j = 0; j < n; j++) {
+                for(int k = j + 1; k < n; k++) {
+                    int u = stops[j];
+                    int v = stops[k];
+                    ld dist = graph->get_dist(stop_graphindmp[u], stop_graphindmp[v], false);
+                    e.push_back({dist, {j, k}});
+                }
+            }
+            sort(e.begin(), e.end());
+
+            // - do MST algorithm
+            DSU dsu(n);
+            ld esum = 0;
+            for(int j = 0; j < e.size(); j++) {
+                int u = e[i].second.first;
+                int v = e[i].second.second;
+                ld dist = e[i].first;
+                if(dsu.unify(u, v)) {
+                    esum += dist;
+                }
+            }
+
+            avg_assignment_compactness += esum;
+        }
+        avg_assignment_compactness /= this->assignments.value().size();
+        eval["avg_assignment_compactness"] = avg_assignment_compactness;
+
+        //total bus overbooking
+        ld total_bus_overbooking = 0;
+        for(int i = 0; i < this->buses.size(); i++) {
+            Bus *bus = this->buses[i];
+            total_bus_overbooking += std::max((ld) 0, bus_loadmp[bus->id] - bus->capacity);
+        }
+        eval["total_bus_overbooking"] = total_bus_overbooking;
+
+        //sum of squared deviation from mean bus load
+        ld mean_bus_load = 0;
+        for(int i = 0; i < this->buses.size(); i++) {
+            Bus *bus = this->buses[i];
+            mean_bus_load += bus_loadmp[bus->id];
+        }
+        mean_bus_load /= this->buses.size();
+        ld bus_load_deviation = 0;
+        for(int i = 0; i < this->buses.size(); i++) {
+            Bus *bus = this->buses[i];
+            ld deviation = mean_bus_load - bus_loadmp[bus->id];
+            bus_load_deviation += deviation * deviation;
+        }
+        eval["bus_load_deviation"] = bus_load_deviation;
+    }   
+
+    if(this->routes.has_value()) {
+        assert(this->stops.has_value());
+        assert(this->assignments.has_value());
+
+        //average per-bus travel time
+        ld average_bus_travel_time = 0;
+        for(int i = 0; i < this->routes.value().size(); i++) {
+            BusRoute *route = this->routes.value()[i];
+            average_bus_travel_time += route->travel_time;
+        }
+        average_bus_travel_time /= this->buses.size();
+        eval["average_bus_travel_time"] = average_bus_travel_time;
+
+        //maximum bus travel time
+        ld maximum_bus_travel_time = 0;
+        for(int i = 0; i < this->routes.value().size(); i++) {
+            BusRoute *route = this->routes.value()[i];
+            maximum_bus_travel_time = std::max(maximum_bus_travel_time, route->travel_time);
+        }
+        eval["maximum_bus_travel_time"] = maximum_bus_travel_time;
+    }
+
+    this->evals = eval;
 }

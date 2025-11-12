@@ -31,6 +31,9 @@ struct BRP {
     //road graph
     std::optional<Graph*> graph;
 
+    //evaluation output
+    std::map<std::string, ld> evals;
+
     BRP(
         Coordinate* school, 
         Coordinate* bus_yard, 
@@ -66,4 +69,5 @@ struct BRP {
     void do_p1();
     void do_p2();
     void do_p3();
+    void do_eval();
 };

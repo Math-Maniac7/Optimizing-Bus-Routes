@@ -325,10 +325,11 @@ HttpResponse http_request_retry(
     for(int i = 0; i < retry_count; i++) {
         res = http_request(url, method, body, headers, timeout, connect_timeout, follow_redirects, user_agent);
         for(int s : retry_status) if(res.status == s) {
-            std::cout << "Retrying HTTP request : " << method << " " << url << std::endl;
-            continue;
+            std::cout << "Retrying HTTP request : " << method << " " << url << " " << (i + 1) << "/" << retry_count << "\n";
+            goto retry;
         }
         break;
+        retry: {}
     }
     return res;
 }
