@@ -8,7 +8,7 @@ namespace utils {
             "Accept: application/json"
         };
 
-        const auto resp = http_request(
+        const auto resp = http_request_retry(
             endpoint,
             "POST",
             query,
@@ -16,7 +16,9 @@ namespace utils {
             60,
             10,
             true,
-            "overpass-client/1.0"
+            "overpass-client/1.0",
+            {504},
+            5
         );
 
         if (resp.status < 200 || resp.status >= 300) {
@@ -63,7 +65,7 @@ namespace utils {
                 for(std::string s : types) std::cout << s << "\n";
             }
 
-            Graph* g = Graph::parse(j);
+            Graph* g = Graph::parse_osm(j);
             std::cout << "GRAPH : " << g->nodes.size() << "\n";
 
             return g;
