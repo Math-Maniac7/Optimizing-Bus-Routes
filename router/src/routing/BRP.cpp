@@ -174,24 +174,52 @@ json BRP::to_geojson() {
         features.push_back(feature);
     }
     
-    //bus stops
-    if(this->stops.has_value()) {
-        for(int i = 0; i < this->stops.value().size(); i++) {
+    // bus stops + students
+    static const char* PAL[] = {
+        "#e41a1c","#377eb8","#4daf4a","#984ea3",
+        "#ff7f00","#ffff33","#a65628","#f781bf",
+        "#999999","#1b9e77","#d95f02","#7570b3",
+        "#e7298a","#66a61e","#e6ab02","#a6761d",
+        "#666666"
+    };
+    const size_t PAL_N = sizeof(PAL)/sizeof(PAL[0]);
+
+    if (this->stops.has_value()) {
+        for (size_t i = 0; i < this->stops.value().size(); ++i) {
             BusStop *stop = this->stops.value()[i];
             Coordinate *pos = stop->pos;
+            const char* color = PAL[i % PAL_N];
 
-            json feature = {
+            json stop_feature = {
                 {"type", "Feature"},
                 {"properties", {
                     {"name", "stop " + std::to_string(stop->id)},
-                    {"marker-size", "small"}
+                    {"marker-size", "large"},
+                    {"marker-color", color}
                 }},
                 {"geometry", {
                     {"type", "Point"},
                     {"coordinates", {pos->lon, pos->lat}}
                 }}
             };
-            features.push_back(feature);
+            features.push_back(stop_feature);
+
+            for (sid_t sid : stop->students) {
+                Student* stu = this->get_student(sid);
+                json stu_feature = {
+                    {"type", "Feature"},
+                    {"properties", {
+                        {"name", "student " + std::to_string(sid)},
+                        {"marker-size", "small"},
+                        {"marker-color", color}
+                    }},
+                    {"geometry", {
+                        {"type", "Point"},
+                        {"coordinates", {stu->pos->lon, stu->pos->lat}}
+                    }}
+                };
+                features.push_back(stu_feature);
+            }
         }
     }
     
@@ -505,22 +533,18 @@ void BRP::do_p1() {
 }
 */
 void BRP::do_p1() {
-    // Build the road graph
     Graph* graph = this->create_graph();
 
-    // Configure the simple DBSCAN
     dbscan::Params P;
-    P.eps           = 70.0; 
-    P.min_pts       = 3;
-    P.cap           = 10;
-    P.assign_radius = 60.0;
-    P.max_walk      = 90.0;
-    P.near_ratio    = 0.6;
-    P.near_k        = 2;
-    P.solo_mult     = 1.5;
+    P.max_walk_dist = 90.0;
+    P.merge_dist = 50.0;
+    P.seed_radius = 35.0;
+    P.assign_radius = 90.0;
+    P.cap = 12;
+    P.min_pts = 3;
 
-    // Run the clustering
-    this->stops = dbscan::run(this->students, graph, P);
+    std::unordered_map<sid_t, bsid_t> sid2bsid;
+    this->stops = dbscan::place_stops(this->students, graph, P, sid2bsid);
 }
 /*
 NOTES FOR PHASE 2
