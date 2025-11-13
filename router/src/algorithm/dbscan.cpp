@@ -1,210 +1,204 @@
 #include "dbscan.h"
-#include <queue>
 #include <algorithm>
+#include <cmath>
+#include <climits>
+#include <queue>
+#include <unordered_map>
+#include <unordered_set>
 #include <limits>
-#include <cassert>
 
 namespace dbscan {
+
 using std::vector;
-static constexpr ld INF = std::numeric_limits<ld>::infinity();
-static constexpr ld METERS_TO_GRAPH = 1.0L / 1609.34L;
+using node_t = int;
+using DistMap = std::unordered_map<node_t, ld>;
+static constexpr ld METERS_TO_MILES = 1.0L / 1609.34L;
+static inline ld m2g(ld m) { return m * METERS_TO_MILES; }
 
-// Find all student indices within eps (WALK graph) of student i
-static vector<int> region_query(int i,
-                                const vector<int>& stu_walk_node,
-                                Graph* graph,
-                                ld eps) {
-    vector<ld> dist;
-    vector<int> prev;
-    graph->sssp(stu_walk_node[i], true, dist, prev);
-
-    vector<int> nbrs;
-    nbrs.reserve(stu_walk_node.size());
-    for (int j = 0; j < (int)stu_walk_node.size(); ++j) {
-        ld d = dist[stu_walk_node[j]];
-        if (d < INF / 2 && d <= eps) nbrs.push_back(j);
+static void dijkstra_cut(Graph* g, node_t start, ld cut, bool walk, DistMap& out) {
+    out.clear(); if (start < 0 || start >= (node_t)g->nodes.size()) return;
+    struct Q { ld d; node_t u; }; auto cmp = [](auto a, auto b){return a.d>b.d;};
+    std::priority_queue<Q, vector<Q>, decltype(cmp)> pq(cmp);
+    out[start]=0; pq.push({0,start});
+    while(!pq.empty()){
+        auto [d,u]=pq.top(); pq.pop();
+        if(d>cut||out[u]<d-1e-9) continue;
+        for(auto e:g->adj[u]) {
+            if((walk&&!e->is_walkable)||(!walk&&!e->is_driveable)) continue;
+            node_t v=e->v; ld nd=d+e->dist; if(nd>cut) continue;
+            if(!out.count(v)||nd<out[v]) {out[v]=nd; pq.push({nd,v});}
+        }
     }
-    return nbrs;
+}
+static node_t valid_node(Graph* g, node_t n, bool walk) {
+    if (n>=0 && n<(node_t)g->nodes.size() &&
+        (walk?g->nodes[n]->is_walkable:g->nodes[n]->is_driveable)) return n;
+    if (n<0||n>=(node_t)g->nodes.size()) n=0;
+    return g->get_node(g->nodes[n]->coord, walk);
+}
+static int drive_deg(Graph* g,node_t n){int d=0;for(auto e:g->adj[n])if(e->is_driveable)d++;return d;}
+
+static node_t walk_node_safe(Graph* g,const vector<node_t>&w,int i,const vector<Student*>&S){
+    node_t n=w[i]; return (n>=0&&(size_t)n<g->nodes.size())?n:g->get_node(S[i]->pos,true);
+}
+static vector<int> region_query(int i,const vector<node_t>&w,Graph*g,ld r,const vector<Student*>&S){
+    DistMap dist; dijkstra_cut(g,walk_node_safe(g,w,i,S),r,true,dist);
+    vector<int>N; for(int j=0;j<(int)w.size();++j){ if(j==i)continue;
+        node_t v=walk_node_safe(g,w,j,S);auto it=dist.find(v);
+        if(it!=dist.end()&&it->second<=r+1e-6)N.push_back(j);
+    }return N;
+}
+static int medoid(const vector<int>&M,const vector<node_t>&W,Graph*g,
+    const vector<Student*>&S,ld max_walk){
+    ld best=std::numeric_limits<ld>::max();int bi=M.front();
+    for(int i:M){ node_t ni=walk_node_safe(g,W,i,S);
+        vector<ld>d;vector<int>p; g->sssp(ni,true,d,p);
+        ld tot=0;bool bad=false;
+        for(int j:M){node_t nj=walk_node_safe(g,W,j,S);
+            if(d[nj]>max_walk+1e-6){bad=true;break;} tot+=d[nj];
+        } if(!bad&&tot<best){best=tot;bi=i;}
+    } return bi;
+}
+static vector<vector<int>> make_clusters(const vector<Student*>&S,Graph*g,
+    const Params&P,vector<node_t>&W,vector<node_t>&D,std::unordered_map<sid_t,int>&idmap){
+    int N=S.size(); W.resize(N); D.resize(N); idmap.clear();
+    for(int i=0;i<N;++i){W[i]=g->get_node(S[i]->pos,true);
+        D[i]=g->get_node(S[i]->pos,false); idmap[S[i]->id]=i;}
+    ld r=m2g(P.seed_radius>0?P.seed_radius:P.max_walk_dist);
+    vector<int>lab(N,-1); int cid=0;
+    for(int i=0;i<N;++i){ if(lab[i]!=-1)continue;
+        auto n=region_query(i,W,g,r,S);
+        if((int)n.size()+1<P.min_pts){lab[i]=-2;continue;}
+        lab[i]=cid; std::queue<int>q; for(int v:n)q.push(v);
+        while(!q.empty()){int j=q.front();q.pop();
+            if(lab[j]==-2)lab[j]=cid; if(lab[j]!=-1)continue;
+            lab[j]=cid; auto n2=region_query(j,W,g,r,S);
+            if((int)n2.size()+1>=P.min_pts)for(int v:n2)if(lab[v]==-1)q.push(v);
+        }++cid;
+    }
+    vector<vector<int>>C(cid); for(int i=0;i<N;++i)if(lab[i]>=0)C[lab[i]].push_back(i);
+    return C;
 }
 
-static int drive_degree(Graph* graph, int node) {
-    if (node < 0 || node >= (int)graph->adj.size()) return 0;
-    int deg = 0;
-    for (auto e : graph->adj[node]) {
-        if (e->is_driveable) deg++;
+struct WalkParams{ld max,assign,move;};
+struct StopCandidate{Coordinate*coord;vector<int>cover;node_t walk,drive;};
+static vector<node_t> gather_drive(Graph*g,node_t s,ld lim,size_t cap){
+    DistMap best;struct Q{ld d;node_t u;};auto cmp=[](auto a,auto b){return a.d>b.d;};
+    std::priority_queue<Q,vector<Q>,decltype(cmp)>pq(cmp);
+    s=valid_node(g,s,false);best[s]=0;pq.push({0,s});vector<node_t>out;
+    while(!pq.empty()){auto[d,u]=pq.top();pq.pop();
+        if(d>lim||best[u]<d-1e-9)continue;
+        if(g->nodes[u]->is_driveable)out.push_back(u);
+        if(out.size()>=cap)break;
+        for(auto e:g->adj[u])if(e->is_driveable){
+            node_t v=e->v;ld nd=d+e->dist;
+            if(nd<=lim&&(!best.count(v)||nd<best[v])){best[v]=nd;pq.push({nd,v});}
+        }}
+    if(out.empty())out.push_back(s);return out;
+}
+static StopCandidate build_cand(const vector<int>&M,const vector<node_t>&W,const vector<node_t>&D,
+    const vector<Student*>&S,Graph*g,const WalkParams&wp){
+    StopCandidate c{}; if(M.empty())return c;
+    int med=medoid(M,W,g,S,wp.max);
+    std::unordered_set<node_t>seen;vector<node_t>C;
+    auto add=[&](int i,size_t k){for(node_t n:gather_drive(g,D[i],wp.move,k))
+        if(seen.insert(n).second){C.push_back(n);if(C.size()>=64)break;}};
+    add(med,8);for(int i:M)if(C.size()<64&&i!=med)add(i,4);
+    if(C.empty())C.push_back(D[med]);
+    ld best=std::numeric_limits<ld>::max();node_t bd=-1,bw=-1;
+    for(node_t d:C){node_t mw=walk_node_safe(g,W,med,S);
+        node_t w=valid_node(g,d,true);
+        DistMap dist; dijkstra_cut(g,w,wp.max,true,dist);
+        bool ok=true;ld tot=0,worst=0;
+        for(int i:M){node_t si=walk_node_safe(g,W,i,S);
+            auto it=dist.find(si);
+            if(it==dist.end()||it->second>wp.max+1e-6){ok=false;break;}
+            tot+=it->second;worst=std::max(worst,it->second);}
+        if(!ok)continue;
+        ld pen=(drive_deg(g,d)<=2?(4-drive_deg(g,d))*0.5L*wp.max:0);
+        ld score=tot+0.25L*worst+pen;
+        if(score<best){best=score;bd=d;bw=w;}
     }
-    return deg;
+    if(bd==-1){bd=D[med];bw=valid_node(g,bd,true);}
+    c.coord=g->nodes[bd]->coord->make_copy();c.walk=bw;c.drive=bd;
+    DistMap dist; dijkstra_cut(g,c.walk,wp.max,true,dist);
+    for(int i:M){node_t si=walk_node_safe(g,W,i,S);
+        auto it=dist.find(si);
+        if(it!=dist.end()&&it->second<=wp.max+1e-6)c.cover.push_back(i);}
+    if(c.cover.empty())c.cover.push_back(med);
+    return c;
 }
 
-static std::pair<int,int> choose_medoid_walk_node(const vector<int>& members,
-                                                  const vector<int>& stu_walk_node,
-                                                  Graph* graph) {
-    int best_node = stu_walk_node[members.front()];
-    int best_idx = members.front();
-    ld best_sum = INF;
-    vector<ld> dist;
-    vector<int> prev;
-    for (int idx : members) {
-        int node = stu_walk_node[idx];
-        graph->sssp(node, true, dist, prev);
-        ld total = 0;
-        bool bad = false;
-        for (int other : members) {
-            ld d = dist[stu_walk_node[other]];
-            if (d >= INF / 2) { bad = true; break; }
-            total += d;
-        }
-        if (!bad && total < best_sum) {
-            best_sum = total;
-            best_node = node;
-            best_idx = idx;
-        }
-    }
-    return {best_node, best_idx};
+
+static void dedup(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd){
+    std::unordered_map<node_t,size_t>k;vector<bool>rem(st.size(),false);
+    for(size_t i=0;i<st.size();++i){node_t key=sd[i];
+        if(!k.count(key))k[key]=i;else{size_t j=k[key];
+            st[j]->students.insert(st[j]->students.end(),
+                st[i]->students.begin(),st[i]->students.end());
+            rem[i]=true;}}
+    vector<BusStop*>S;vector<node_t>W,D;
+    for(size_t i=0;i<st.size();++i)if(!rem[i]){
+        st[i]->id=S.size();S.push_back(st[i]);
+        W.push_back(sw[i]);D.push_back(sd[i]);}
+    st.swap(S);sw.swap(W);sd.swap(D);
 }
 
-static int find_intersection_near(Graph* graph,
-                                  int start,
-                                  ld max_meters) {
-    if (start < 0 || start >= (int)graph->nodes.size()) return -1;
-    const ld limit = max_meters * METERS_TO_GRAPH;
-    std::queue<std::pair<int, ld>> q;
-    std::vector<bool> seen(graph->nodes.size(), false);
-    q.push({start, 0.0L});
-    seen[start] = true;
-
-    while (!q.empty()) {
-        auto [node, dist] = q.front();
-        q.pop();
-        if (node != start &&
-            graph->nodes[node]->is_driveable &&
-            drive_degree(graph, node) >= 3) {
-            return node;
+// merge+reassign+enforce 
+static void refine(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd,
+    const vector<Student*>&S,const std::unordered_map<sid_t,int>&map,
+    const vector<node_t>&W,const vector<node_t>&D,Graph*g,const WalkParams&wp,const Params&P){
+    dedup(st,sw,sd);
+    // reassign every student to closest reachable stop
+    vector<DistMap>cov(st.size());
+    for(size_t i=0;i<st.size();++i)dijkstra_cut(g,sw[i],wp.max,true,cov[i]);
+    vector<vector<sid_t>>ns(st.size());
+    for(auto&[sid,idx]:map){
+        node_t sn=W[idx];ld bd=std::numeric_limits<ld>::max();int bi=-1;
+        for(size_t s=0;s<st.size();++s){
+            auto it=cov[s].find(sn);
+            if(it!=cov[s].end()&&it->second<=wp.max+1e-6&&it->second<bd){bd=it->second;bi=s;}
         }
-        if ((size_t)node >= graph->adj.size()) continue;
-        for (auto e : graph->adj[node]) {
-            if (!e->is_driveable) continue;
-            int nxt = (int)e->v;
-            ld nd = dist + e->dist;
-            if (nd > limit + 1e-9L) continue;
-            if (!seen[nxt]) {
-                seen[nxt] = true;
-                q.push({nxt, nd});
-            }
-        }
+        if(bi==-1)bi=0;ns[bi].push_back(sid);
     }
-    return -1;
+    vector<BusStop*>S2;vector<node_t>W2,D2;
+    for(size_t i=0;i<st.size();++i)if(!ns[i].empty()){
+        st[i]->students=ns[i];st[i]->id=S2.size();
+        S2.push_back(st[i]);W2.push_back(sw[i]);D2.push_back(sd[i]);}
+    st.swap(S2);sw.swap(W2);sd.swap(D2);
+    dedup(st,sw,sd);
 }
 
-std::vector<BusStop*> run(const std::vector<Student*>& students,
-                          Graph* graph,
-                          const Params& P) {
-    const int N = (int)students.size();
-    if (N == 0) return {};
+vector<BusStop*> run(const vector<Student*>&S,Graph*g,const Params&Pin){
+    Params P=Pin;
+    if(P.seed_radius<=0)P.seed_radius=P.max_walk_dist;
+    if(P.assign_radius<=0)P.assign_radius=P.max_walk_dist;
+    if(P.cap<=0)P.cap=INT_MAX;if(P.min_pts<=0)P.min_pts=1;
+    WalkParams wp{m2g(P.max_walk_dist),m2g(P.assign_radius),m2g(std::max(P.max_walk_dist,60.0))};
+    vector<node_t>W,D;std::unordered_map<sid_t,int>map;
+    auto clusters=make_clusters(S,g,P,W,D,map);
+    vector<BusStop*>st;vector<node_t>sw,sd;vector<bool>as(S.size(),false);
 
-    // Map each student to nearest WALK node once
-    vector<int> stu_walk_node(N);
-    vector<int> stu_drive_node(N);
-    for (int i = 0; i < N; ++i) {
-        stu_walk_node[i] = graph->get_node(students[i]->pos, true);
-        stu_drive_node[i] = graph->get_node(students[i]->pos, false);
+    auto emit=[&](const StopCandidate&c){
+        if(!c.coord||c.cover.empty())return;
+        vector<sid_t>ids;for(int i:c.cover){ids.push_back(S[i]->id);as[i]=true;}
+        st.push_back(new BusStop((bsid_t)st.size(),c.coord,ids));
+        sw.push_back(c.walk);sd.push_back(c.drive);
+    };
+    for(auto&M:clusters){
+        for(auto&chunk:{M})emit(build_cand(M,W,D,S,g,wp)); 
     }
-
-    // Standard DBSCAN labeling
-    vector<int> label(N, -1); // -1=unvisited, -2=noise, >=0 cluster id
-    int cur_cluster = 0;
-
-    const ld eps_graph = ((P.seed_radius > 0 ? P.seed_radius : P.max_walk_dist) * METERS_TO_GRAPH);
-    for (int i = 0; i < N; ++i) {
-        if (label[i] != -1) continue;
-
-        auto nbrs = region_query(i, stu_walk_node, graph, eps_graph);
-        if ((int)nbrs.size() + 1 < P.min_pts) {
-            label[i] = -2; // noise
-            continue;
-        }
-
-        label[i] = cur_cluster;
-        std::queue<int> q;
-        for (int v : nbrs) q.push(v);
-
-        while (!q.empty()) {
-            int j = q.front(); q.pop();
-            if (label[j] == -2) label[j] = cur_cluster;   // border → cluster
-            if (label[j] != -1) continue;                 // already processed
-            label[j] = cur_cluster;
-
-            auto nbrs2 = region_query(j, stu_walk_node, graph, eps_graph);
-            if ((int)nbrs2.size() + 1 >= P.min_pts) {
-                for (int u : nbrs2) if (label[u] == -1) q.push(u);
-            }
-        }
-        ++cur_cluster;
-    }
-
-    // Group indices by cluster; collect noise
-    vector<vector<int>> clusters(cur_cluster);
-    vector<int> noise;
-    for (int i = 0; i < N; ++i) {
-        if (label[i] >= 0) clusters[label[i]].push_back(i);
-        else               noise.push_back(i);
-    }
-
-    // Build stops: one per cluster (center snapped to WALK graph)
-    vector<BusStop*> stops;
-    stops.reserve(clusters.size() + noise.size());
-
-    for (auto& members : clusters) {
-        if (members.empty()) continue;
-
-        auto [center_walk_node, medoid_idx] =
-            choose_medoid_walk_node(members, stu_walk_node, graph);
-        int drive_center = stu_drive_node[medoid_idx];
-        if (drive_center < 0 || drive_center >= (int)graph->nodes.size() ||
-            !graph->nodes[drive_center]->is_driveable) {
-            drive_center = graph->get_node(graph->nodes[center_walk_node]->coord, false);
-        }
-        int intersection = find_intersection_near(graph, drive_center, 20.0L);
-        if (intersection != -1) drive_center = intersection;
-
-        // Ensure each member is actually reachable from the chosen center on WALK graph
-        vector<ld> dist; vector<int> prev;
-        graph->sssp(center_walk_node, true, dist, prev);
-
-        vector<sid_t> sids;
-        sids.reserve(members.size());
-        for (int idx : members) {
-            if (dist[stu_walk_node[idx]] < INF / 2) {
-                sids.push_back(students[idx]->id);
-            }
-        }
-        if (!sids.empty()) {
-            Coordinate* pos = graph->nodes[drive_center]->coord->make_copy();
-            stops.push_back(new BusStop((bsid_t)stops.size(), pos, sids));
-        }
-    }
-
-    // Noise → singleton stops at student positions
-    for (int idx : noise) {
-        Coordinate* p = students[idx]->pos->make_copy();
-        std::vector<sid_t> one = { students[idx]->id };
-        stops.push_back(new BusStop((bsid_t)stops.size(), p, one));
-    }
-
-    return stops;
+    for(int i=0;i<(int)S.size();++i)
+        if(!as[i])emit(build_cand({i},W,D,S,g,wp));
+    refine(st,sw,sd,S,map,W,D,g,wp,P);
+    return st;
+}
+vector<BusStop*> place_stops(const vector<Student*>&S,Graph*g,const Params&P,
+    std::unordered_map<sid_t,bsid_t>&sid2bs){
+    auto st=run(S,g,P);sid2bs.clear();
+    for(size_t i=0;i<st.size();++i)
+        for(auto sid:st[i]->students)sid2bs[sid]=st[i]->id;
+    return st;
 }
 
-std::vector<BusStop*> place_stops(const std::vector<Student*>& students,
-                                  Graph* graph,
-                                  const Params& params,
-                                  std::unordered_map<sid_t, bsid_t>& sid2bsid_out) {
-    auto stops = run(students, graph, params);
-    sid2bsid_out.clear();
-    for (size_t i = 0; i < stops.size(); ++i) {
-        for (sid_t sid : stops[i]->students) {
-            sid2bsid_out[sid] = stops[i]->id;
-        }
-    }
-    return stops;
-}
 }
