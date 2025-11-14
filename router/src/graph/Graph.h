@@ -42,16 +42,29 @@ struct OSMWay {
 };
 
 struct Node {
+    ll id;
     Coordinate* coord;
 
     //these are true if there is an outgoing edge from here with these properties
     bool is_walkable, is_driveable; 
 
-    Node(ld _lat, ld _lon) {
-        coord = new Coordinate(_lat, _lon);
+    Node(ll _id, Coordinate* _coord) {
+        id = _id;
+        coord = _coord;
         is_walkable = false;
         is_driveable = false;
     }
+
+    Node(ll _id, Coordinate* _coord, bool _is_walkable, bool _is_driveable) {
+        id = _id;
+        coord = _coord;
+        is_walkable = _is_walkable;
+        is_driveable = _is_driveable;
+    }
+
+    static Node* parse(json& j);
+    json to_json();
+    Node* make_copy();
 };
 
 //one way connection between two Nodes. 
@@ -63,12 +76,13 @@ struct Edge {
         u = _u, v = _v, dist = _dist, speed_limit = _speed_limit;
         is_walkable = _is_walkable, is_driveable = _is_driveable;
     }
+
+    static Edge* parse(json& j);
+    json to_json();
+    Edge* make_copy();
 };
 
 struct Graph {
-    std::map<ll, OSMNode*> osm_nodes;
-    std::map<ll, OSMWay*> osm_ways;
-
     std::vector<Node*> nodes;
     std::vector<std::vector<Edge*>> adj;
 
@@ -76,7 +90,11 @@ struct Graph {
     std::vector<std::vector<int>> prev_walk, prev_drive;
 
     Graph() {}
+    static Graph* parse_osm(json& j);
+
     static Graph* parse(json& j);
+    json to_json();
+    Graph* make_copy();
 
     //single source shortest paths
     void sssp(int start, bool walkable, std::vector<ld>& out_dist, std::vector<int>& out_prev);

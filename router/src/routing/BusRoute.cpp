@@ -1,10 +1,11 @@
 #include "BusRoute.h"
 
-BusRoute::BusRoute(brid_t _id, bsaid_t _assignment, std::vector<bsid_t> _stops, std::vector<std::vector<Coordinate*>> _paths) {
+BusRoute::BusRoute(brid_t _id, bsaid_t _assignment, std::vector<bsid_t> _stops, std::vector<std::vector<Coordinate*>> _paths, ld _travel_time) {
     id = _id;
     assignment = _assignment;
     stops = _stops;
     paths = _paths;
+    travel_time = _travel_time;
 }
 
 BusRoute* BusRoute::parse(json& j) {
@@ -13,6 +14,7 @@ BusRoute* BusRoute::parse(json& j) {
     if(!j.contains("stops")) throw std::runtime_error("BusRoute missing stops");
     if(!j["stops"].is_array()) throw std::runtime_error("BusRoute stops malformed");
     if(!j.contains("paths")) throw std::runtime_error("BusRoute missing paths");
+    if(!j.contains("travel_time")) throw std::runtime_error("BusRoute missing travel_time");
     brid_t id = j["id"];
     bsaid_t assignment = j["assignment"];
     std::vector<bsid_t> stops = j["stops"];
@@ -25,7 +27,8 @@ BusRoute* BusRoute::parse(json& j) {
             path[ii] = Coordinate::parse(j["paths"][i][ii]);
         }
     }
-    return new BusRoute(id, assignment, stops, paths);
+    ld travel_time = j["travel_time"];
+    return new BusRoute(id, assignment, stops, paths, travel_time);
 }
 
 json BusRoute::to_json() {
@@ -33,6 +36,16 @@ json BusRoute::to_json() {
     ret["id"] = this->id;
     ret["assignment"] = this->assignment;
     ret["stops"] = this->stops;
+    std::vector<json> paths_json;
+    for(int i = 0; i < this->paths.size(); i++) {
+        std::vector<json> path;
+        for(int j = 0; j < this->paths[i].size(); j++) {
+            path.push_back(this->paths[i][j]->to_json());
+        }
+        paths_json.push_back(path);
+    }
+    ret["paths"] = paths_json;
+    ret["travel_time"] = travel_time;
     return ret;
 }
 
@@ -45,5 +58,5 @@ BusRoute* BusRoute::make_copy() {
         }
         _paths[i] = _path;
     }
-    return new BusRoute(id, assignment, stops, _paths);
+    return new BusRoute(id, assignment, stops, _paths, travel_time);
 }
