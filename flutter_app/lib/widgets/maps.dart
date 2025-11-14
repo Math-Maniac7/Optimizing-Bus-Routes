@@ -132,8 +132,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
     for (final stop in stops) {
       id += 1;
-      final key = id.toString();
-      final currentId = id;
+      if (!stop.containsKey('id')) {
+        id += 1;
+        stop['id'] = id;
+      }
+
+      final currentId = stop['id'];
+      final key = currentId.toString();
       final lat = stop['pos']['lat'] as num;
       final lon = stop['pos']['lon'] as num;
 
@@ -195,6 +200,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final center = _savedCenter ?? const LatLng(30.622405, -96.353055);
 
       final newStop = {
+        'id': id,
         'pos': {'lat': center.latitude, 'lon': center.longitude},
       };
 
@@ -315,7 +321,22 @@ class _GoogleMapsState extends State<GoogleMaps> {
                           textAlign: TextAlign.center,
                         ),
                         SizedBox(height: screenHeight * 0.02),
-                        IconButton(onPressed: () {}, icon: Icon(Icons.delete)),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              stops.removeWhere((stop) {
+                                return stop['id'] == touchedMarkerId;
+                              });
+
+                              _markers.remove(touchedMarkerId.toString());
+
+                              buildMarkers(stops);
+
+                              markerInfo = false;
+                            });
+                          },
+                          icon: Icon(Icons.delete),
+                        ),
                       ],
                     ),
                   ),
