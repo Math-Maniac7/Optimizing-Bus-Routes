@@ -150,7 +150,8 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
     
     //do evals
-    brp->do_evals();
+    //brp->do_evals();
+    brp->do_eval();
 
     json output = brp->to_json();
     std::string output_str = to_string(output);
@@ -183,7 +184,8 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str, char** json_out) {
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 
     //do evals
-    brp->do_evals();
+    //brp->do_evals();
+    brp->do_eval();
 
     json output = brp->to_geojson();
     std::string output_str = to_string(output);
@@ -217,7 +219,8 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str, char** json_out) {
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 
     //do evals
-    brp->do_evals();
+    //brp->do_evals();
+    brp->do_eval();
 
     json output = brp->to_geojson();
     std::string output_str = to_string(output);
