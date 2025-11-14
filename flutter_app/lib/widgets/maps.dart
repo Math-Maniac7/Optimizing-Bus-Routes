@@ -34,6 +34,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late BitmapDescriptor dragIcon;
   late BitmapDescriptor studentIcon;
   List<dynamic>? _originalStops;
+  bool markerInfo = false;
 
   Future<void> initIcons() async {
     final base = Marker(
@@ -134,7 +135,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final lon = stop['pos']['lon'] as num;
 
       newMarkers[key] = Marker(
-        onTap: () {},
+        onTap: () {
+          if (widget.isModified) {
+            setState(() {
+              markerInfo = true;
+            });
+          }
+        },
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
@@ -230,31 +237,55 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: GoogleMap(
-        onMapCreated: _onMapCreated,
-        initialCameraPosition: CameraPosition(
-          target: _savedCenter ?? const LatLng(30.622405, -96.353055),
-          zoom: _savedZoom ?? 15,
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    return Stack(
+      children: [
+        GoogleMap(
+          onMapCreated: _onMapCreated,
+          initialCameraPosition: CameraPosition(
+            target: _savedCenter ?? const LatLng(30.622405, -96.353055),
+            zoom: _savedZoom ?? 15,
+          ),
+          markers: _markers.values.toSet(),
+          onCameraMove: (position) {
+            _savedCenter = position.target;
+            _savedZoom = position.zoom;
+            setState(() {
+              markerInfo = false;
+            });
+          },
+          scrollGesturesEnabled: widget.interactionEnabled,
+          zoomGesturesEnabled: widget.interactionEnabled,
+          tiltGesturesEnabled: widget.interactionEnabled,
+          rotateGesturesEnabled: widget.interactionEnabled,
+          zoomControlsEnabled: widget.interactionEnabled,
+          myLocationButtonEnabled: widget.interactionEnabled,
+          mapToolbarEnabled: widget.interactionEnabled,
+          onTap: widget.interactionEnabled ? null : (_) {},
         ),
-        markers: _markers.values.toSet(),
-        onCameraMove: (position) {
-          _savedCenter = position.target;
-          _savedZoom = position.zoom;
-        },
-        scrollGesturesEnabled: widget.interactionEnabled,
-        zoomGesturesEnabled: widget.interactionEnabled,
-        tiltGesturesEnabled: widget.interactionEnabled,
-        rotateGesturesEnabled: widget.interactionEnabled,
-        zoomControlsEnabled: widget.interactionEnabled,
-        myLocationButtonEnabled: widget.interactionEnabled,
-        mapToolbarEnabled: widget.interactionEnabled,
-        onTap: widget.interactionEnabled
-            ? null
-            : (_) {
-                // Ignore taps when interactions are disabled
-              },
-      ),
+        if (markerInfo && widget.isModified)
+          Positioned(
+            child: IgnorePointer(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  Column(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(color: Colors.white),
+                        padding: EdgeInsets.symmetric(
+                          vertical: screenHeight * .4,
+                          horizontal: screenWidth * .1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
