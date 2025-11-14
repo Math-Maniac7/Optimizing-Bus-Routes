@@ -349,6 +349,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Parse the GeoJSON result
       final geoJsonResult = jsonDecode(resultString) as Map<String, dynamic>;
       debugPrint('Parsed GeoJSON result');
+      debugPrint("RAW GEOJSON RESULT:\n$resultString");
 
       // Extract stops from GeoJSON features
       final stops = _extractStopsFromGeoJson(geoJsonResult, jsonData);

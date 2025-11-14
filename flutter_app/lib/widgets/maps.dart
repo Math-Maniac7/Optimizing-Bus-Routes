@@ -32,6 +32,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   double? _savedZoom;
   late BitmapDescriptor idleIcon;
   late BitmapDescriptor dragIcon;
+  late BitmapDescriptor studentIcon;
   List<dynamic>? _originalStops;
 
   Future<void> initIcons() async {
@@ -54,6 +55,14 @@ class _GoogleMapsState extends State<GoogleMaps> {
     );
 
     dragIcon = dragMarker.icon;
+
+    final studentMarker = await GoogleMapsCustomMarker.createCustomMarker(
+      marker: base,
+      shape: MarkerShape.pin,
+      backgroundColor: const Color.fromARGB(255, 162, 0, 255),
+    );
+
+    studentIcon = studentMarker.icon;
   }
 
   void _fitToMarkers() async {
