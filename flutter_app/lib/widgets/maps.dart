@@ -25,18 +25,20 @@ class GoogleMaps extends StatefulWidget {
 }
 
 class _GoogleMapsState extends State<GoogleMaps> {
+  late GoogleMapController
+  mapController; //controller that connects movements made on map
   final Map<String, Marker> _markers = {};
-  late GoogleMapController mapController;
-  int id = 0;
   List<dynamic> stops = [];
+  List<dynamic>? _originalStops;
   LatLng? _savedCenter;
   double? _savedZoom;
+  int id = 0;
+  int touchedMarkerId = 0;
+  bool markerInfo = false;
+
   late BitmapDescriptor idleIcon;
   late BitmapDescriptor dragIcon;
   late BitmapDescriptor studentIcon;
-  List<dynamic>? _originalStops;
-  bool markerInfo = false;
-  int touchedMarkerId = 0;
 
   Future<void> initIcons() async {
     final base = Marker(
@@ -68,6 +70,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     studentIcon = studentMarker.icon;
   }
 
+  //centers the camera on the marker map majority
   void _fitToMarkers() async {
     if (_markers.isEmpty) return;
 
@@ -101,6 +104,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     _savedZoom = await _estimateZoomToFitBounds(bounds);
   }
 
+  //how the bounding box for the camera is created
   Future<double> _estimateZoomToFitBounds(LatLngBounds bounds) async {
     // Approximation: zoom out based on lat/long difference
     final latDiff = (bounds.northeast.latitude - bounds.southwest.latitude)
@@ -117,6 +121,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   Future<void> _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
+    //creates the bitmapmarkers that creates our custom colors for markers
     await initIcons();
     if (StorageService.hasBusRouteData()) {
       final jsonData = StorageService.getBusRouteData();
@@ -127,17 +132,17 @@ class _GoogleMapsState extends State<GoogleMaps> {
     }
   }
 
+  //Creation of markers with their parameters
   void buildMarkers(List<dynamic> stops) async {
     final newMarkers = <String, Marker>{};
-
+    id = 0;
     for (final stop in stops) {
-      id += 1;
       if (!stop.containsKey('id')) {
         id += 1;
         stop['id'] = id;
       }
-
-      final currentId = stop['id'];
+      final currentId = stop['id'] as int;
+      if (currentId > id) id = currentId;
       final key = currentId.toString();
       final lat = stop['pos']['lat'] as num;
       final lon = stop['pos']['lon'] as num;
@@ -155,6 +160,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
         icon: idleIcon,
+        //movement features
         onDragStart: (position) {
           setState(() {
             _markers[key] = _markers[key]!.copyWith(iconParam: dragIcon);
@@ -192,6 +198,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
     }
   }
 
+  //didUpdateWidget is the dynamic way at noticing when one of the widgets from parent has changed
+  //Based on changes is what determines the modify, save, and cancel button clicks from routes page
   @override
   void didUpdateWidget(covariant GoogleMaps oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -211,7 +219,12 @@ class _GoogleMapsState extends State<GoogleMaps> {
     }
 
     if (!oldWidget.isSaved && widget.isSaved) {
-      StorageService.saveBusRouteData({'stops': stops});
+      final jsonData = StorageService.getBusRouteData();
+      final data = jsonData != null
+          ? Map<String, dynamic>.from(jsonData)
+          : <String, dynamic>{};
+      data['stops'] = stops;
+      StorageService.saveBusRouteData(data);
       buildMarkers(stops);
     }
 
