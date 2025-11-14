@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/storage_service.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_custom_marker/google_maps_custom_marker.dart';
 
@@ -35,6 +36,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late BitmapDescriptor studentIcon;
   List<dynamic>? _originalStops;
   bool markerInfo = false;
+  int touchedMarkerId = 0;
 
   Future<void> initIcons() async {
     final base = Marker(
@@ -131,6 +133,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     for (final stop in stops) {
       id += 1;
       final key = id.toString();
+      final currentId = id;
       final lat = stop['pos']['lat'] as num;
       final lon = stop['pos']['lon'] as num;
 
@@ -139,6 +142,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
           if (widget.isModified) {
             setState(() {
               markerInfo = true;
+              touchedMarkerId = currentId;
             });
           }
         },
@@ -255,34 +259,68 @@ class _GoogleMapsState extends State<GoogleMaps> {
               markerInfo = false;
             });
           },
-          scrollGesturesEnabled: widget.interactionEnabled,
-          zoomGesturesEnabled: widget.interactionEnabled,
-          tiltGesturesEnabled: widget.interactionEnabled,
-          rotateGesturesEnabled: widget.interactionEnabled,
-          zoomControlsEnabled: widget.interactionEnabled,
-          myLocationButtonEnabled: widget.interactionEnabled,
-          mapToolbarEnabled: widget.interactionEnabled,
+          scrollGesturesEnabled: !markerInfo
+              ? widget.interactionEnabled
+              : false,
+          zoomGesturesEnabled: !markerInfo ? widget.interactionEnabled : false,
+          tiltGesturesEnabled: !markerInfo ? widget.interactionEnabled : false,
+          rotateGesturesEnabled: !markerInfo
+              ? widget.interactionEnabled
+              : false,
+          zoomControlsEnabled: !markerInfo ? widget.interactionEnabled : false,
+          myLocationButtonEnabled: !markerInfo
+              ? widget.interactionEnabled
+              : false,
+          mapToolbarEnabled: !markerInfo ? widget.interactionEnabled : false,
           onTap: widget.interactionEnabled ? null : (_) {},
         ),
+        if (markerInfo)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                setState(() => markerInfo = false);
+              },
+            ),
+          ),
         if (markerInfo && widget.isModified)
           Positioned(
-            child: IgnorePointer(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  Column(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(color: Colors.white),
-                        padding: EdgeInsets.symmetric(
-                          vertical: screenHeight * .4,
-                          horizontal: screenWidth * .1,
-                        ),
-                      ),
-                    ],
+            left: 0,
+
+            width: screenWidth * 0.16,
+            height: screenHeight * 1,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Container(
+                  decoration: BoxDecoration(color: Colors.white),
+                  padding: EdgeInsets.symmetric(
+                    vertical: screenHeight * .05,
+                    horizontal: screenWidth * .05,
                   ),
-                ],
-              ),
+                  height: screenHeight * 1,
+                  width: screenWidth * .16,
+                  child: AbsorbPointer(
+                    absorbing: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Stop $touchedMarkerId',
+                          style: GoogleFonts.quicksand(
+                            fontSize: 25,
+                            fontWeight: FontWeight.w600,
+                            color: const Color.fromARGB(255, 48, 56, 149),
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        SizedBox(height: screenHeight * 0.02),
+                        IconButton(onPressed: () {}, icon: Icon(Icons.delete)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
       ],
