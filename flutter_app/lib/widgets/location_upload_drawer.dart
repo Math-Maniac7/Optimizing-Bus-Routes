@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/csv_parser.dart';
 import '../services/geocoding_service.dart';
 import '../services/storage_service.dart';
@@ -28,8 +29,41 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
   @override
   void initState() {
     super.initState();
-    // Initialize controller for the default bus
-    _busCapacityControllers.add(TextEditingController(text: '100'));
+    // Load cached data from session storage
+    _loadCachedData();
+  }
+  
+  Future<void> _loadCachedData() async {
+    // Load CSV content
+    final cachedCsv = StorageService.getCsvContent();
+    if (cachedCsv != null) {
+      setState(() {
+        _csvContent = cachedCsv;
+      });
+    }
+    
+    // Load bus data
+    final cachedBuses = StorageService.getBusData();
+    if (cachedBuses != null && cachedBuses.isNotEmpty) {
+      setState(() {
+        _buses.clear();
+        _buses.addAll(cachedBuses);
+        // Dispose old controllers
+        for (var controller in _busCapacityControllers) {
+          controller.dispose();
+        }
+        _busCapacityControllers.clear();
+        // Create new controllers with cached capacities
+        for (var bus in _buses) {
+          _busCapacityControllers.add(
+            TextEditingController(text: bus['capacity'].toString()),
+          );
+        }
+      });
+    } else {
+      // Initialize controller for the default bus if no cached data
+      _busCapacityControllers.add(TextEditingController(text: '100'));
+    }
   }
 
   @override
@@ -42,11 +76,43 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
     super.dispose();
   }
 
+  List<Map<String, dynamic>> _getCurrentBusData() {
+    // Get current bus data with updated capacities from controllers
+    final currentBuses = <Map<String, dynamic>>[];
+    for (int i = 0; i < _buses.length; i++) {
+      final capacityText = _busCapacityControllers[i].text.trim();
+      final capacity = int.tryParse(capacityText);
+      currentBuses.add({
+        'id': _buses[i]['id'],
+        'capacity': capacity ?? _buses[i]['capacity'],
+      });
+    }
+    return currentBuses;
+  }
+
+  bool _shouldShowProcessButton() {
+    if (_csvContent == null) return false;
+    if (_isProcessing) return false;
+    
+    // Get current bus data with updated capacities
+    final currentBuses = _getCurrentBusData();
+    
+    // Check if data has changed since last processing
+    final currentState = StorageService.generateStateHash(_csvContent, currentBuses);
+    final lastProcessedState = StorageService.getLastProcessedState();
+    
+    // Show button if never processed or if state has changed
+    return lastProcessedState == null || lastProcessedState != currentState;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
       child: Container(
         width: MediaQuery.of(context).size.width * 0.8,
+        decoration: const BoxDecoration(
+          color: Color.fromRGBO(57, 103, 136, 1),
+        ),
         padding: const EdgeInsets.all(16.0),
         child: SingleChildScrollView(
           child: Column(
@@ -57,58 +123,118 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Add Locations',
-                  style: TextStyle(
+                  style: GoogleFonts.quicksand(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close, color: Colors.white),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             
             // Instructions
-            const Text(
+            Text(
               'Upload a CSV file with school, bus yard, and student locations.',
-              style: TextStyle(fontSize: 16),
+              style: GoogleFonts.quicksand(
+                fontSize: 16,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Expected format: type,address,id',
-              style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
+              style: GoogleFonts.quicksand(
+                fontSize: 14,
+                fontStyle: FontStyle.italic,
+                color: Colors.white70,
+              ),
             ),
             const SizedBox(height: 16),
             
             // File picker button
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: TextButton.icon(
                 onPressed: _pickFile,
-                icon: const Icon(Icons.upload_file),
-                label: const Text('Choose CSV File'),
+                icon: const Icon(Icons.upload_file, color: Colors.white),
+                label: Text(
+                  'Choose CSV File',
+                  style: GoogleFonts.quicksand(
+                    fontSize: 16,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ButtonStyle(
+                  backgroundColor: const WidgetStatePropertyAll<Color>(
+                    Color.fromARGB(180, 255, 255, 255),
+                  ),
+                  padding: const WidgetStatePropertyAll<EdgeInsets>(
+                    EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  ),
+                  shape: WidgetStatePropertyAll<RoundedRectangleBorder>(
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
               ),
             ),
+            
+            // CSV loaded indicator
+            if (_csvContent != null)
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade900.withOpacity(0.3),
+                  border: Border.all(color: Colors.green.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'CSV file loaded and ready to process',
+                        style: GoogleFonts.quicksand(
+                          color: Colors.green.shade100,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            
             const SizedBox(height: 24),
             
             // Bus Management Section
-            const Divider(),
+            const Divider(color: Colors.white30),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Bus Configuration',
-              style: TextStyle(
+              style: GoogleFonts.quicksand(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+                color: Colors.white,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Add buses and set their capacity',
-              style: TextStyle(fontSize: 14, fontStyle: FontStyle.italic),
+              style: GoogleFonts.quicksand(
+                fontSize: 14,
+                fontStyle: FontStyle.italic,
+                color: Colors.white70,
+              ),
             ),
             const SizedBox(height: 12),
             
@@ -131,24 +257,50 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
             // Add bus button
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
+              child: TextButton.icon(
                 onPressed: _addBus,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Bus'),
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: Text(
+                  'Add Bus',
+                  style: GoogleFonts.quicksand(
+                    fontSize: 16,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ButtonStyle(
+                  backgroundColor: const WidgetStatePropertyAll<Color>(
+                    Color.fromARGB(180, 255, 255, 255),
+                  ),
+                  padding: const WidgetStatePropertyAll<EdgeInsets>(
+                    EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  ),
+                  shape: WidgetStatePropertyAll<RoundedRectangleBorder>(
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 16),
-            const Divider(),
+            const Divider(color: Colors.white30),
             const SizedBox(height: 16),
             
             // Processing indicator
             if (_isProcessing)
-              const Center(
+              Center(
                 child: Column(
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 8),
-                    Text('Processing locations...'),
+                    const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Processing locations...',
+                      style: GoogleFonts.quicksand(
+                        fontSize: 16,
+                        color: Colors.white,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -159,13 +311,16 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  border: Border.all(color: Colors.red.shade200),
+                  color: Colors.red.shade900.withOpacity(0.3),
+                  border: Border.all(color: Colors.red.shade300),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   _errorMessage!,
-                  style: TextStyle(color: Colors.red.shade700),
+                  style: GoogleFonts.quicksand(
+                    color: Colors.red.shade100,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             
@@ -175,50 +330,45 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  border: Border.all(color: Colors.green.shade200),
+                  color: Colors.green.shade900.withOpacity(0.3),
+                  border: Border.all(color: Colors.green.shade300),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   _successMessage!,
-                  style: TextStyle(color: Colors.green.shade700),
+                  style: GoogleFonts.quicksand(
+                    color: Colors.green.shade100,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             
             const SizedBox(height: 24),
             
-            // Process button
-            if (_csvContent != null && !_isProcessing)
+            // Process button (only show if data has changed or never processed)
+            if (_shouldShowProcessButton())
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                child: TextButton(
                   onPressed: _processCsv,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  style: ButtonStyle(
+                    backgroundColor: const WidgetStatePropertyAll<Color>(
+                      Color.fromARGB(180, 255, 255, 255),
+                    ),
+                    padding: const WidgetStatePropertyAll<EdgeInsets>(
+                      EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                    ),
+                    shape: WidgetStatePropertyAll<RoundedRectangleBorder>(
+                      RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Process Locations',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ),
-            
-            // View JSON button
-            if (_generatedJson != null)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _viewJson,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  child: const Text(
-                    'View JSON',
-                    style: TextStyle(fontSize: 16),
+                    style: GoogleFonts.quicksand(
+                      fontSize: 16,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -236,7 +386,8 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
+        color: const Color.fromARGB(180, 255, 255, 255),
+        border: Border.all(color: Colors.white30),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
@@ -244,9 +395,10 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
           // Bus ID label
           Text(
             'Bus ${_buses[index]['id']}:',
-            style: const TextStyle(
+            style: GoogleFonts.quicksand(
               fontWeight: FontWeight.bold,
               fontSize: 16,
+              color: const Color.fromRGBO(57, 103, 136, 1),
             ),
           ),
           const SizedBox(width: 12),
@@ -254,10 +406,19 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
           Expanded(
             child: TextField(
               controller: _busCapacityControllers[index],
-              decoration: const InputDecoration(
+              onChanged: (_) => _onBusDataChanged(),
+              decoration: InputDecoration(
                 labelText: 'Capacity',
-                border: OutlineInputBorder(),
+                labelStyle: GoogleFonts.quicksand(
+                  color: const Color.fromRGBO(57, 103, 136, 1),
+                ),
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: const Color.fromARGB(180, 255, 255, 255),
                 isDense: true,
+              ),
+              style: GoogleFonts.quicksand(
+                color: const Color.fromRGBO(57, 103, 136, 1),
               ),
               keyboardType: TextInputType.number,
             ),
@@ -267,12 +428,27 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
           IconButton(
             onPressed: _buses.length > 1 ? () => _removeBus(index) : null,
             icon: const Icon(Icons.delete),
-            color: Colors.red,
+            color: Colors.red.shade300,
             tooltip: _buses.length > 1 ? 'Remove bus' : 'At least one bus required',
           ),
         ],
       ),
     );
+  }
+  
+  void _onBusDataChanged() {
+    // Update bus capacities from controllers
+    for (int i = 0; i < _buses.length; i++) {
+      final capacityText = _busCapacityControllers[i].text.trim();
+      final capacity = int.tryParse(capacityText);
+      if (capacity != null && capacity > 0) {
+        _buses[i]['capacity'] = capacity;
+      }
+    }
+    // Save to session storage
+    StorageService.saveBusData(_buses);
+    // Trigger rebuild to update Process button visibility
+    setState(() {});
   }
 
   void _addBus() {
@@ -281,6 +457,9 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
       _buses.add({'id': newId, 'capacity': 50}); // Default capacity of 50
       _busCapacityControllers.add(TextEditingController(text: '50'));
     });
+    
+    // Save to session storage
+    StorageService.saveBusData(_buses);
     
     // Scroll to the bottom to show the newly added bus
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -306,6 +485,9 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
         _buses[i]['id'] = i;
       }
     });
+    
+    // Save to session storage
+    StorageService.saveBusData(_buses);
   }
 
   Future<void> _pickFile() async {
@@ -348,6 +530,8 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
         _successMessage = 'File loaded successfully';
         _generatedJson = null;
       });
+      // Save to session storage
+      await StorageService.saveCsvContent(content);
     } catch (e) {
       setState(() {
         _errorMessage = 'Error reading file: $e';
@@ -365,6 +549,8 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
         _successMessage = 'File loaded successfully';
         _generatedJson = null;
       });
+      // Save to session storage
+      await StorageService.saveCsvContent(content);
     } catch (e) {
       setState(() {
         _errorMessage = 'Error reading file: $e';
@@ -450,6 +636,14 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
       // Save to local storage
       await StorageService.saveBusRouteData(jsonData);
       
+      // Save the updated bus data to session storage (with updated capacities)
+      await StorageService.saveBusData(_buses);
+      
+      // Save the current state as the last processed state (use updated bus data)
+      final currentBuses = _getCurrentBusData();
+      final currentState = StorageService.generateStateHash(_csvContent, currentBuses);
+      await StorageService.saveLastProcessedState(currentState);
+      
       setState(() {
         _generatedJson = jsonData;
         _isProcessing = false;
@@ -464,28 +658,4 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
   }
 
 
-  void _viewJson() {
-    if (_generatedJson == null) return;
-    
-    final jsonString = const JsonEncoder.withIndent('  ').convert(_generatedJson);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Generated JSON'),
-        content: SingleChildScrollView(
-          child: Text(
-            jsonString,
-            style: const TextStyle(fontFamily: 'monospace'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
 }
