@@ -214,8 +214,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
     if (oldWidget.addMarker < widget.addMarker) {
       final center = _savedCenter ?? const LatLng(30.622405, -96.353055);
 
+      final nextId = (stops.isEmpty)
+          ? 1
+          : (stops.map((s) => s['id'] as int).reduce((a, b) => a > b ? a : b) +
+                1);
+
       final newStop = {
-        'id': id,
+        'id': nextId,
         'pos': {'lat': center.latitude, 'lon': center.longitude},
       };
 
@@ -260,8 +265,11 @@ class _GoogleMapsState extends State<GoogleMaps> {
       if (_originalStops != null && _originalStudents != null) {
         stops = List.from(_originalStops!);
         students = List.from(_originalStudents!);
-        buildMarkers(stops, MarkerType.stop);
-        buildMarkers(students, MarkerType.student);
+        setState(() {
+      _markers.clear();          
+      buildMarkers(stops, MarkerType.stop);
+      buildMarkers(students, MarkerType.student);
+    });
       }
     }
 
