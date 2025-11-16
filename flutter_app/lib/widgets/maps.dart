@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -5,6 +6,25 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_custom_marker/google_maps_custom_marker.dart';
 
 enum MarkerType { stop, student }
+
+enum MarkerLabel {
+  stop('Bus Stop', Colors.purple),
+  student('Student', Colors.red);
+
+  const MarkerLabel(this.label, this.color);
+  final String label;
+  final Color color;
+
+  static final List<DropdownMenuEntry<MarkerLabel>> entries = MarkerLabel.values
+      .map((m) {
+        return DropdownMenuEntry<MarkerLabel>(
+          value: m,
+          label: m.label,
+          style: MenuItemButton.styleFrom(foregroundColor: m.color),
+        );
+      })
+      .toList();
+}
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
@@ -43,6 +63,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late BitmapDescriptor stopIcon;
   late BitmapDescriptor dragIcon;
   late BitmapDescriptor studentIcon;
+  MarkerLabel? selectedMarker = MarkerLabel.stop;
 
   Future<void> initIcons() async {
     final base = Marker(
@@ -266,10 +287,10 @@ class _GoogleMapsState extends State<GoogleMaps> {
         stops = List.from(_originalStops!);
         students = List.from(_originalStudents!);
         setState(() {
-      _markers.clear();          
-      buildMarkers(stops, MarkerType.stop);
-      buildMarkers(students, MarkerType.student);
-    });
+          _markers.clear();
+          buildMarkers(stops, MarkerType.stop);
+          buildMarkers(students, MarkerType.student);
+        });
       }
     }
 
@@ -342,7 +363,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                   decoration: BoxDecoration(color: Colors.white),
                   padding: EdgeInsets.symmetric(
                     vertical: screenHeight * .05,
-                    horizontal: screenWidth * .04,
+                    horizontal: screenWidth * .02,
                   ),
                   height: screenHeight * 1,
                   width: screenWidth * .16,
@@ -363,25 +384,57 @@ class _GoogleMapsState extends State<GoogleMaps> {
                           ),
                         ),
                         SizedBox(height: screenHeight * 0.02),
-                        IconButton(
-                          onPressed: () {
-                            setState(() {
-                              stops.removeWhere((stop) {
-                                return stop['id'] == touchedMarkerId;
-                              });
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            DropdownMenu<MarkerLabel>(
+                              width: screenWidth * .08,
+                              initialSelection: selectedMarker,
+                              requestFocusOnTap: false,
+                              onSelected: (MarkerLabel? m) {
+                                setState(() {
+                                  selectedMarker = m;
+                                  if(selectedMarker?.label == 'Bus Stop'){
+                                    _markers['${markerType}_$touchedMarkerId'] = _markers['${markerType}_$touchedMarkerId']!.copyWith(iconParam: stopIcon);
+                                  } 
+                                  if(selectedMarker?.label == 'Student'){
+                                    _markers['${markerType}_$touchedMarkerId'] = _markers['${markerType}_$touchedMarkerId']!.copyWith(iconParam: studentIcon);
+                                  }
+                                });
+                              },
+                              dropdownMenuEntries: MarkerLabel.entries,
+                              inputDecorationTheme: InputDecorationTheme(
+                                fillColor: Colors.white,
+                                filled: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  stops.removeWhere((stop) {
+                                    return stop['id'] == touchedMarkerId;
+                                  });
 
-                              students.removeWhere((student) {
-                                return student['id'] == touchedMarkerId;
-                              });
+                                  students.removeWhere((student) {
+                                    return student['id'] == touchedMarkerId;
+                                  });
 
-                              _markers.remove('${markerType}_$touchedMarkerId');
-                              buildMarkers(stops, MarkerType.stop);
-                              buildMarkers(students, MarkerType.student);
+                                  _markers.remove(
+                                    '${markerType}_$touchedMarkerId',
+                                  );
+                                  buildMarkers(stops, MarkerType.stop);
+                                  buildMarkers(students, MarkerType.student);
 
-                              markerInfo = false;
-                            });
-                          },
-                          icon: Icon(Icons.delete),
+                                  markerInfo = false;
+                                });
+                              },
+                              icon: Icon(Icons.delete),
+                            ),
+                          ],
                         ),
                       ],
                     ),
