@@ -362,6 +362,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       }
       debugPrint('Extracted ${stops.length} stops from BRP JSON');
 
+
       // Merge the result with existing JSON data
       // The result contains the full BRP with stops, assignments, routes, etc.
       // We want to preserve our existing data and add the stops
@@ -377,8 +378,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       // Save the updated JSON back to session storage
       await StorageService.saveBusRouteData(updatedJsonData);
+      
       debugPrint('Saved updated JSON to session storage');
-
       setState(() {
         _mapReloadKey++; // force map to rebuild
       });

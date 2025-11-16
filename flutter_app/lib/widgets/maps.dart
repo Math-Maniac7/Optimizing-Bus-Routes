@@ -4,6 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_custom_marker/google_maps_custom_marker.dart';
 
+enum MarkerType {
+  stop,
+  student,
+
+}
+
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
   bool isSaved;
@@ -29,6 +35,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   mapController; //controller that connects movements made on map
   final Map<String, Marker> _markers = {};
   List<dynamic> stops = [];
+  List<dynamic> students = [];
   List<dynamic>? _originalStops;
   LatLng? _savedCenter;
   double? _savedZoom;
@@ -36,7 +43,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   int touchedMarkerId = 0;
   bool markerInfo = false;
 
-  late BitmapDescriptor idleIcon;
+  late BitmapDescriptor stopIcon;
   late BitmapDescriptor dragIcon;
   late BitmapDescriptor studentIcon;
 
@@ -46,12 +53,14 @@ class _GoogleMapsState extends State<GoogleMaps> {
       position: LatLng(0, 0),
     );
 
-    final idleMarker = await GoogleMapsCustomMarker.createCustomMarker(
+    final stopMarker = await GoogleMapsCustomMarker.createCustomMarker(
       marker: base,
       shape: MarkerShape.pin,
+      backgroundColor: const Color.fromARGB(255, 162, 0, 255),
+
     );
 
-    idleIcon = idleMarker.icon;
+    stopIcon = stopMarker.icon;
 
     final dragMarker = await GoogleMapsCustomMarker.createCustomMarker(
       marker: base,
@@ -64,7 +73,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
     final studentMarker = await GoogleMapsCustomMarker.createCustomMarker(
       marker: base,
       shape: MarkerShape.pin,
-      backgroundColor: const Color.fromARGB(255, 162, 0, 255),
     );
 
     studentIcon = studentMarker.icon;
@@ -127,25 +135,30 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final jsonData = StorageService.getBusRouteData();
       if (jsonData != null && jsonData['stops'] != null) {
         stops = jsonData['stops'];
-        buildMarkers(stops);
+        buildMarkers(stops, MarkerType.stop);
+      }
+      if (jsonData != null && jsonData['students'] != null) {
+        students = jsonData['students'];
+        buildMarkers(students, MarkerType.student);
       }
     }
+    
   }
 
   //Creation of markers with their parameters
-  void buildMarkers(List<dynamic> stops) async {
+  void buildMarkers(List<dynamic> markers, MarkerType flag) async {
     final newMarkers = <String, Marker>{};
     id = 0;
-    for (final stop in stops) {
-      if (!stop.containsKey('id')) {
+    for (final m in markers) {
+      if (!m.containsKey('id')) {
         id += 1;
-        stop['id'] = id;
+        m['id'] = id;
       }
-      final currentId = stop['id'] as int;
+      final currentId = m['id'] as int;
       if (currentId > id) id = currentId;
-      final key = currentId.toString();
-      final lat = stop['pos']['lat'] as num;
-      final lon = stop['pos']['lon'] as num;
+      final key = '${flag.name}_$currentId'; 
+      final lat = m['pos']['lat'] as num;
+      final lon = m['pos']['lon'] as num;
 
       newMarkers[key] = Marker(
         onTap: () {
@@ -159,7 +172,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
-        icon: idleIcon,
+        icon: (flag == MarkerType.stop) ? stopIcon : studentIcon,
         //movement features
         onDragStart: (position) {
           setState(() {
@@ -175,20 +188,18 @@ class _GoogleMapsState extends State<GoogleMaps> {
           setState(() {
             _markers[key] = _markers[key]!.copyWith(
               positionParam: LatLng(position.latitude, position.longitude),
-              iconParam: idleIcon,
+              iconParam:(flag == MarkerType.stop) ? stopIcon : studentIcon ,
             );
 
-            stop['pos']['lat'] = position.latitude;
-            stop['pos']['lon'] = position.longitude;
+            m['pos']['lat'] = position.latitude;
+            m['pos']['lon'] = position.longitude;
           });
         },
       );
     }
 
     setState(() {
-      _markers
-        ..clear()
-        ..addAll(newMarkers);
+      _markers.addAll(newMarkers);
     });
 
     if (_savedCenter == null && _savedZoom == null) {
@@ -214,7 +225,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
       setState(() {
         stops.add(newStop);
-        buildMarkers(stops);
+        buildMarkers(stops, MarkerType.stop);
       });
     }
 
@@ -224,8 +235,12 @@ class _GoogleMapsState extends State<GoogleMaps> {
           ? Map<String, dynamic>.from(jsonData)
           : <String, dynamic>{};
       data['stops'] = stops;
+      data[
+        'students'
+      ] = students;
       StorageService.saveBusRouteData(data);
-      buildMarkers(stops);
+      buildMarkers(stops, MarkerType.stop);
+      buildMarkers(students, MarkerType.student);
     }
 
     if (!oldWidget.isModified && widget.isModified) {
@@ -242,7 +257,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     if (!oldWidget.cancelModify && widget.cancelModify) {
       if (_originalStops != null) {
         stops = List.from(_originalStops!);
-        buildMarkers(stops);
+        buildMarkers(stops,MarkerType.stop);
       }
     }
 
@@ -343,7 +358,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
                               _markers.remove(touchedMarkerId.toString());
 
-                              buildMarkers(stops);
+                              buildMarkers(stops, MarkerType.stop);
 
                               markerInfo = false;
                             });

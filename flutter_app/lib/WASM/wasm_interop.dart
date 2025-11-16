@@ -44,14 +44,14 @@ Future<String> phase_2(String input) async {
 
   // Allocate input string
   final inptr = module.callMethod('allocateUTF8', [input]);
-  final json_out = module.callMethod('_malloc', [4]); // char**
+  final jsonOut = module.callMethod('_malloc', [4]); // char**
 
   // Call C++ function
-  final outptr = module.callMethod('__Z5do_p2PcPS_', [inptr, json_out]);
+  final outptr = module.callMethod('__Z5do_p2PcPS_', [inptr, jsonOut]);
 
 
   //The C++ function uses emscripten_sleep to handle async processing while returning control to the main loop
-  while (module.callMethod('__Z20json_out_to_C_stringPPc', [json_out]) == 0){
+  while (module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut]) == 0){
     await Future.delayed(Duration(milliseconds: 500));
   }
 
@@ -61,12 +61,12 @@ Future<String> phase_2(String input) async {
   String output;
   try {
     // Convert output pointer to Dart string
-    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [json_out])]);
+    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
   } finally {
     // Free output pointers to avoid memory leak
     module.callMethod('_free', [outptr]);
-    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [json_out])]);
-    module.callMethod('_free', [json_out]);
+    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    module.callMethod('_free', [jsonOut]);
   }
 
   return output;
@@ -77,14 +77,14 @@ Future<String> phase_3(String input) async {
 
   // Allocate input string
   final inptr = module.callMethod('allocateUTF8', [input]);
-  final json_out = module.callMethod('_malloc', [4]); // char**
+  final jsonOut = module.callMethod('_malloc', [4]); // char**
 
   // Call C++ function
-  final outptr = module.callMethod('__Z5do_p3PcPS_', [inptr, json_out]);
+  final outptr = module.callMethod('__Z5do_p3PcPS_', [inptr, jsonOut]);
 
 
   //The C++ function uses emscripten_sleep to handle async processing while returning control to the main loop
-  while (module.callMethod('__Z20json_out_to_C_stringPPc', [json_out]) == 0){
+  while (module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut]) == 0){
     await Future.delayed(Duration(milliseconds: 500));
   }
 
@@ -94,12 +94,12 @@ Future<String> phase_3(String input) async {
   String output;
   try {
     // Convert output pointer to Dart string
-    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [json_out])]);
+    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
   } finally {
     // Free output pointers to avoid memory leak
     module.callMethod('_free', [outptr]);
-    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [json_out])]);
-    module.callMethod('_free', [json_out]);
+    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    module.callMethod('_free', [jsonOut]);
   }
 
   return output;
