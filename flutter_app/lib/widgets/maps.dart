@@ -389,7 +389,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                           children: [
                             DropdownMenu<MarkerLabel>(
                               width: screenWidth * .08,
-                              initialSelection: selectedMarker,
+                              initialSelection: (markerType == "stop") ? MarkerLabel.stop : MarkerLabel.student,
                               requestFocusOnTap: false,
                               onSelected: (MarkerLabel? m) {
                                 setState(() {
