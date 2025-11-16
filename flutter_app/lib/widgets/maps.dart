@@ -4,11 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_custom_marker/google_maps_custom_marker.dart';
 
-enum MarkerType {
-  stop,
-  student,
-
-}
+enum MarkerType { stop, student }
 
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
@@ -37,12 +33,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
   List<dynamic> stops = [];
   List<dynamic> students = [];
   List<dynamic>? _originalStops;
+  List<dynamic>? _originalStudents;
   LatLng? _savedCenter;
   double? _savedZoom;
   int id = 0;
   int touchedMarkerId = 0;
+  String markerType = "";
   bool markerInfo = false;
-
   late BitmapDescriptor stopIcon;
   late BitmapDescriptor dragIcon;
   late BitmapDescriptor studentIcon;
@@ -57,7 +54,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
       marker: base,
       shape: MarkerShape.pin,
       backgroundColor: const Color.fromARGB(255, 162, 0, 255),
-
     );
 
     stopIcon = stopMarker.icon;
@@ -142,7 +138,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
         buildMarkers(students, MarkerType.student);
       }
     }
-    
   }
 
   //Creation of markers with their parameters
@@ -156,7 +151,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
       }
       final currentId = m['id'] as int;
       if (currentId > id) id = currentId;
-      final key = '${flag.name}_$currentId'; 
+      final key = '${flag.name}_$currentId';
       final lat = m['pos']['lat'] as num;
       final lon = m['pos']['lon'] as num;
 
@@ -166,6 +161,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
             setState(() {
               markerInfo = true;
               touchedMarkerId = currentId;
+              markerType = flag.name;
             });
           }
         },
@@ -188,7 +184,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
           setState(() {
             _markers[key] = _markers[key]!.copyWith(
               positionParam: LatLng(position.latitude, position.longitude),
-              iconParam:(flag == MarkerType.stop) ? stopIcon : studentIcon ,
+              iconParam: (flag == MarkerType.stop) ? stopIcon : studentIcon,
             );
 
             m['pos']['lat'] = position.latitude;
@@ -235,9 +231,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
           ? Map<String, dynamic>.from(jsonData)
           : <String, dynamic>{};
       data['stops'] = stops;
-      data[
-        'students'
-      ] = students;
+      data['students'] = students;
       StorageService.saveBusRouteData(data);
       buildMarkers(stops, MarkerType.stop);
       buildMarkers(students, MarkerType.student);
@@ -252,12 +246,22 @@ class _GoogleMapsState extends State<GoogleMaps> {
             },
           )
           .toList();
+      _originalStudents = students
+          .map(
+            (s) => {
+              ...s,
+              'pos': {'lat': s['pos']['lat'], 'lon': s['pos']['lon']},
+            },
+          )
+          .toList();
     }
 
     if (!oldWidget.cancelModify && widget.cancelModify) {
-      if (_originalStops != null) {
+      if (_originalStops != null && _originalStudents != null) {
         stops = List.from(_originalStops!);
-        buildMarkers(stops,MarkerType.stop);
+        students = List.from(_originalStudents!);
+        buildMarkers(stops, MarkerType.stop);
+        buildMarkers(students, MarkerType.student);
       }
     }
 
@@ -330,7 +334,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                   decoration: BoxDecoration(color: Colors.white),
                   padding: EdgeInsets.symmetric(
                     vertical: screenHeight * .05,
-                    horizontal: screenWidth * .05,
+                    horizontal: screenWidth * .04,
                   ),
                   height: screenHeight * 1,
                   width: screenWidth * .16,
@@ -339,14 +343,16 @@ class _GoogleMapsState extends State<GoogleMaps> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Stop $touchedMarkerId',
-                          style: GoogleFonts.quicksand(
-                            fontSize: 25,
-                            fontWeight: FontWeight.w600,
-                            color: const Color.fromARGB(255, 48, 56, 149),
+                        Center(
+                          child: Text(
+                            '$markerType $touchedMarkerId',
+                            style: GoogleFonts.quicksand(
+                              fontSize: 25,
+                              fontWeight: FontWeight.w600,
+                              color: const Color.fromARGB(255, 48, 56, 149),
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          textAlign: TextAlign.center,
                         ),
                         SizedBox(height: screenHeight * 0.02),
                         IconButton(
@@ -356,9 +362,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                 return stop['id'] == touchedMarkerId;
                               });
 
-                              _markers.remove(touchedMarkerId.toString());
+                              students.removeWhere((student) {
+                                return student['id'] == touchedMarkerId;
+                              });
 
+                              _markers.remove('${markerType}_$touchedMarkerId');
                               buildMarkers(stops, MarkerType.stop);
+                              buildMarkers(students, MarkerType.student);
 
                               markerInfo = false;
                             });
