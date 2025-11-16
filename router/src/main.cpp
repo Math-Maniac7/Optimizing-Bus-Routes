@@ -187,7 +187,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str, char** json_out) {
     //brp->do_evals();
     brp->do_eval();
 
-    json output = brp->to_geojson();
+    json output = brp->to_json();
     std::string output_str = to_string(output);
 
     //char* cstr = (char*) malloc(output_str.size());
@@ -222,7 +222,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str, char** json_out) {
     //brp->do_evals();
     brp->do_eval();
 
-    json output = brp->to_geojson();
+    json output = brp->to_json();
     std::string output_str = to_string(output);
 
     //char* cstr = (char*) malloc(output_str.size());
