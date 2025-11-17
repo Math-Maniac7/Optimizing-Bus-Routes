@@ -303,13 +303,12 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     final phase = selectedPhase ?? Phase.phaseOne;
     final phaseNumber = phase.phase;
 
-    // Only implement Phase 1 for now
     if (phaseNumber == 1) {
       await _generatePhase1Routes();
     } else if (phaseNumber == 2) {
-      _showMessage('Phase 2 not yet implemented', isError: false);
+      await _generatePhase2Routes();
     } else if (phaseNumber == 3) {
-      _showMessage('Phase 3 not yet implemented', isError: false);
+      await _generatePhase3Routes();
     }
   }
 
@@ -362,7 +361,6 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       }
       debugPrint('Extracted ${stops.length} stops from BRP JSON');
 
-
       // Merge the result with existing JSON data
       // The result contains the full BRP with stops, assignments, routes, etc.
       // We want to preserve our existing data and add the stops
@@ -378,8 +376,208 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       // Save the updated JSON back to session storage
       await StorageService.saveBusRouteData(updatedJsonData);
-      
       debugPrint('Saved updated JSON to session storage');
+
+      setState(() {
+        _mapReloadKey++; // force map to rebuild
+      });
+
+      _showMessage('Routes generated successfully!', isError: false);
+    } catch (e) {
+      debugPrint('Error generating routes: $e');
+      _showMessage('Error generating routes: ${e.toString()}', isError: true);
+    } finally {
+      setState(() {
+        _isGeneratingRoutes = false;
+      });
+    }
+  }
+
+  Future<void> _generatePhase2Routes() async {
+    // Check if data exists in session storage
+    if (!StorageService.hasBusRouteData()) {
+      _showMessage(
+        'No location data found. Please add locations first.',
+        isError: true,
+      );
+      return;
+    }
+
+    // Get JSON from session storage
+    final jsonData = StorageService.getBusRouteData();
+    if (jsonData == null) {
+      _showMessage(
+        'Failed to retrieve location data from storage.',
+        isError: true,
+      );
+      return;
+    }
+
+    // Phase 2 requires stops from Phase 1
+    final stops = jsonData['stops'] as List<dynamic>?;
+    if (stops == null || stops.isEmpty) {
+      _showMessage(
+        'Phase 1 must be completed first. Please generate Phase 1 routes.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _isGeneratingRoutes = true;
+    });
+
+    try {
+      // Convert JSON map to string
+      final jsonString = jsonEncode(jsonData);
+      debugPrint('Calling phase_2 with JSON data...');
+
+      // Call the WASM phase_2 function
+      final resultString = await phase_2(jsonString);
+      debugPrint('Received result from phase_2');
+
+      // Parse the BRP JSON result (not GeoJSON)
+      final brpResult = jsonDecode(resultString) as Map<String, dynamic>;
+      debugPrint('Parsed BRP JSON result');
+      debugPrint("RAW BRP RESULT:\n$resultString");
+
+      // Extract assignments from the BRP JSON (assignments are already in the correct format)
+      final assignments = brpResult['assignments'] as List<dynamic>?;
+      if (assignments == null) {
+        _showMessage(
+          'No assignments found in phase 2 result.',
+          isError: true,
+        );
+        return;
+      }
+      debugPrint('Extracted ${assignments.length} assignments from BRP JSON');
+
+      // Merge the result with existing JSON data
+      final updatedJsonData = Map<String, dynamic>.from(jsonData);
+      updatedJsonData['assignments'] = assignments;
+      
+      // Also update other fields if they exist in the result (evals, etc.)
+      if (brpResult.containsKey('evals')) {
+        updatedJsonData['evals'] = brpResult['evals'];
+      }
+      
+      // Preserve stops if they exist in the result
+      if (brpResult.containsKey('stops')) {
+        updatedJsonData['stops'] = brpResult['stops'];
+      }
+      
+      debugPrint('Updated JSON with assignments');
+
+      // Save the updated JSON back to session storage
+      await StorageService.saveBusRouteData(updatedJsonData);
+      debugPrint('Saved updated JSON to session storage');
+
+      setState(() {
+        _mapReloadKey++; // force map to rebuild
+      });
+
+      _showMessage('Routes generated successfully!', isError: false);
+    } catch (e) {
+      debugPrint('Error generating routes: $e');
+      _showMessage('Error generating routes: ${e.toString()}', isError: true);
+    } finally {
+      setState(() {
+        _isGeneratingRoutes = false;
+      });
+    }
+  }
+
+  Future<void> _generatePhase3Routes() async {
+    // Check if data exists in session storage
+    if (!StorageService.hasBusRouteData()) {
+      _showMessage(
+        'No location data found. Please add locations first.',
+        isError: true,
+      );
+      return;
+    }
+
+    // Get JSON from session storage
+    final jsonData = StorageService.getBusRouteData();
+    if (jsonData == null) {
+      _showMessage(
+        'Failed to retrieve location data from storage.',
+        isError: true,
+      );
+      return;
+    }
+
+    // Phase 3 requires stops from Phase 1 and assignments from Phase 2
+    final stops = jsonData['stops'] as List<dynamic>?;
+    if (stops == null || stops.isEmpty) {
+      _showMessage(
+        'Phase 1 must be completed first. Please generate Phase 1 routes.',
+        isError: true,
+      );
+      return;
+    }
+
+    final assignments = jsonData['assignments'] as List<dynamic>?;
+    if (assignments == null || assignments.isEmpty) {
+      _showMessage(
+        'Phase 2 must be completed first. Please generate Phase 2 routes.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _isGeneratingRoutes = true;
+    });
+
+    try {
+      // Convert JSON map to string
+      final jsonString = jsonEncode(jsonData);
+      debugPrint('Calling phase_3 with JSON data...');
+
+      // Call the WASM phase_3 function
+      final resultString = await phase_3(jsonString);
+      debugPrint('Received result from phase_3');
+
+      // Parse the BRP JSON result (not GeoJSON)
+      final brpResult = jsonDecode(resultString) as Map<String, dynamic>;
+      debugPrint('Parsed BRP JSON result');
+      debugPrint("RAW BRP RESULT:\n$resultString");
+
+      // Extract routes from the BRP JSON (routes are already in the correct format)
+      final routes = brpResult['routes'] as List<dynamic>?;
+      if (routes == null) {
+        _showMessage(
+          'No routes found in phase 3 result.',
+          isError: true,
+        );
+        return;
+      }
+      debugPrint('Extracted ${routes.length} routes from BRP JSON');
+
+      // Merge the result with existing JSON data
+      final updatedJsonData = Map<String, dynamic>.from(jsonData);
+      updatedJsonData['routes'] = routes;
+      
+      // Also update other fields if they exist in the result (evals, etc.)
+      if (brpResult.containsKey('evals')) {
+        updatedJsonData['evals'] = brpResult['evals'];
+      }
+      
+      // Preserve stops and assignments if they exist in the result
+      if (brpResult.containsKey('stops')) {
+        updatedJsonData['stops'] = brpResult['stops'];
+      }
+      if (brpResult.containsKey('assignments')) {
+        updatedJsonData['assignments'] = brpResult['assignments'];
+      }
+      
+      debugPrint('Updated JSON with routes');
+
+      // Save the updated JSON back to session storage
+      await StorageService.saveBusRouteData(updatedJsonData);
+      debugPrint('Saved updated JSON to session storage');
+
       setState(() {
         _mapReloadKey++; // force map to rebuild
       });
