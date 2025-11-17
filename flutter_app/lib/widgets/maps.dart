@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,6 +25,7 @@ enum MarkerLabel {
       .toList();
 }
 
+// ignore: must_be_immutable
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
   bool isSaved;
@@ -49,6 +49,9 @@ class GoogleMaps extends StatefulWidget {
 class _GoogleMapsState extends State<GoogleMaps> {
   late GoogleMapController
   mapController; //controller that connects movements made on map
+  final ClusterManager _myCluster = ClusterManager(
+    clusterManagerId: ClusterManagerId('my cluster'),
+  );
   final Map<String, Marker> _markers = {};
   List<dynamic> stops = [];
   List<dynamic> students = [];
@@ -65,7 +68,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late BitmapDescriptor studentIcon;
   MarkerLabel? selectedMarker = MarkerLabel.stop;
 
-  Future<void> initIcons() async {
+  Future<void> initIcon() async {
     final base = Marker(
       markerId: const MarkerId('tmp'),
       position: LatLng(0, 0),
@@ -147,7 +150,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   Future<void> _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
     //creates the bitmapmarkers that creates our custom colors for markers
-    await initIcons();
+    await initIcon();
     if (StorageService.hasBusRouteData()) {
       final jsonData = StorageService.getBusRouteData();
       if (jsonData != null && jsonData['stops'] != null) {
@@ -186,6 +189,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
             });
           }
         },
+        clusterManagerId: _myCluster.clusterManagerId,
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
@@ -319,6 +323,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
             zoom: _savedZoom ?? 15,
           ),
           markers: _markers.values.toSet(),
+          clusterManagers: {_myCluster},
           onCameraMove: (position) {
             _savedCenter = position.target;
             _savedZoom = position.zoom;
@@ -389,16 +394,22 @@ class _GoogleMapsState extends State<GoogleMaps> {
                           children: [
                             DropdownMenu<MarkerLabel>(
                               width: screenWidth * .08,
-                              initialSelection: (markerType == "stop") ? MarkerLabel.stop : MarkerLabel.student,
+                              initialSelection: (markerType == "stop")
+                                  ? MarkerLabel.stop
+                                  : MarkerLabel.student,
                               requestFocusOnTap: false,
                               onSelected: (MarkerLabel? m) {
                                 setState(() {
                                   selectedMarker = m;
-                                  if(selectedMarker?.label == 'Bus Stop'){
-                                    _markers['${markerType}_$touchedMarkerId'] = _markers['${markerType}_$touchedMarkerId']!.copyWith(iconParam: stopIcon);
-                                  } 
-                                  if(selectedMarker?.label == 'Student'){
-                                    _markers['${markerType}_$touchedMarkerId'] = _markers['${markerType}_$touchedMarkerId']!.copyWith(iconParam: studentIcon);
+                                  if (selectedMarker?.label == 'Bus Stop') {
+                                    _markers['${markerType}_$touchedMarkerId'] =
+                                        _markers['${markerType}_$touchedMarkerId']!
+                                            .copyWith(iconParam: stopIcon);
+                                  }
+                                  if (selectedMarker?.label == 'Student') {
+                                    _markers['${markerType}_$touchedMarkerId'] =
+                                        _markers['${markerType}_$touchedMarkerId']!
+                                            .copyWith(iconParam: studentIcon);
                                   }
                                 });
                               },
