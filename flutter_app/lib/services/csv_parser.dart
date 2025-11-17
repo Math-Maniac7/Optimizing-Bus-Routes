@@ -66,7 +66,10 @@ class CsvParser {
     return locations;
   }
   
-  static Map<String, dynamic> generateJson(List<LocationData> locations) {
+  static Map<String, dynamic> generateJson(
+    List<LocationData> locations, {
+    List<Map<String, dynamic>>? buses,
+  }) {
     print('DEBUG: generateJson called with ${locations.length} locations');
     print('DEBUG: Location types: ${locations.map((l) => l.type).toList()}');
     
@@ -90,6 +93,17 @@ class CsvParser {
       (loc) => loc.type.toLowerCase() == 'student',
     ).toList();
     
+    // Use provided buses or fall back to default
+    final busesList = buses ?? [
+      {"id": 0, "capacity": 100}
+    ];
+    
+    // Ensure buses are in the correct format (convert to int where needed)
+    final formattedBuses = busesList.map((bus) => {
+      'id': bus['id'] is int ? bus['id'] : int.parse(bus['id'].toString()),
+      'capacity': bus['capacity'] is int ? bus['capacity'] : int.parse(bus['capacity'].toString()),
+    }).toList();
+    
     return {
       'school': {
         'lat': 0.0, // Will be filled by geocoding
@@ -106,20 +120,7 @@ class CsvParser {
           'lon': 0.0, // Will be filled by geocoding
         },
       }).toList(),
-      // Hard-coded values as requested
-      'buses': [
-        {"id": 0, "capacity": 100}
-      ],
-      'stops': [
-        {"id": 0, "pos": {"lat": 30.4524471, "lon": -97.8115005}, "students": [0]},
-        {"id": 1, "pos": {"lat": 30.4427579, "lon": -97.8028133}, "students": [1]},
-        {"id": 2, "pos": {"lat": 30.4423536, "lon": -97.808608}, "students": [2]},
-        {"id": 3, "pos": {"lat": 30.4475907, "lon": -97.8188957}, "students": [3]},
-        {"id": 4, "pos": {"lat": 30.4543126, "lon": -97.8183026}, "students": [4]}
-      ],
-      'assignments': [
-        {"id": 0, "bus": 0, "stops": [0, 1, 2, 3, 4]}
-      ],
+      'buses': formattedBuses,
     };
   }
 }
