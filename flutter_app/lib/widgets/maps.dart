@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_app/pages/route_page.dart';
 import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -32,6 +33,7 @@ class GoogleMaps extends StatefulWidget {
   bool cancelModify;
   int addMarker;
   final bool interactionEnabled;
+  Phase? phaseType;
 
   GoogleMaps({
     super.key,
@@ -40,6 +42,7 @@ class GoogleMaps extends StatefulWidget {
     required this.cancelModify,
     required this.addMarker,
     this.interactionEnabled = true,
+    required this.phaseType,
   });
 
   @override
@@ -53,6 +56,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     clusterManagerId: ClusterManagerId('my cluster'),
   );
   final Map<String, Marker> _markers = {};
+  Set<Polyline> polylines = {};
   List<dynamic> stops = [];
   List<dynamic> students = [];
   List<dynamic>? _originalStops;
@@ -98,7 +102,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     studentIcon = studentMarker.icon;
   }
 
-  //centers the camera on the marker map majority
+  //centers the camera on the marker map majority, chat made this
   void _fitToMarkers() async {
     if (_markers.isEmpty) return;
 
@@ -132,7 +136,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     _savedZoom = await _estimateZoomToFitBounds(bounds);
   }
 
-  //how the bounding box for the camera is created
+  //how the bounding box for the camera is created, chat made this
   Future<double> _estimateZoomToFitBounds(LatLngBounds bounds) async {
     // Approximation: zoom out based on lat/long difference
     final latDiff = (bounds.northeast.latitude - bounds.southwest.latitude)
@@ -149,6 +153,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   Future<void> _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
+    final phase = widget.phaseType;
     //creates the bitmapmarkers that creates our custom colors for markers
     await initIcon();
     if (StorageService.hasBusRouteData()) {
@@ -161,6 +166,42 @@ class _GoogleMapsState extends State<GoogleMaps> {
         students = jsonData['students'];
         buildMarkers(students, MarkerType.student);
       }
+      //Depending on the phase, different visualizations will be implemented.
+      /*
+      Phase 1 - Bus stops and students
+      Phase 2 - Bus stops with bus assignments(this will only be seen in the marker information sidebar)
+      Phase 3 - Bus routes 
+      */
+      // switch (phase) {
+      //   case null:
+      //     throw UnimplementedError();
+      //   case Phase.phaseOne:
+      //     // TODO: Handle this case.
+      //     if (jsonData != null && jsonData['stops'] != null) {
+      //       stops = jsonData['stops'];
+      //       buildMarkers(stops, MarkerType.stop);
+      //     }
+      //     if (jsonData != null && jsonData['students'] != null) {
+      //       students = jsonData['students'];
+      //       buildMarkers(students, MarkerType.student);
+      //     }
+      //     break;
+      //   case Phase.phaseTwo:
+      //     // TODO: Handle this case.
+      //     if (jsonData != null && jsonData['stops'] != null) {
+      //       stops = jsonData['stops'];
+      //       buildMarkers(stops, MarkerType.stop);
+      //     }
+      //     break;
+      //   case Phase.phaseThree:
+      //     // TODO: Handle this case.
+      //     if (jsonData != null && jsonData['stops'] != null) {
+      //       stops = jsonData['stops'];
+      //       buildMarkers(stops, MarkerType.stop);
+      //     }
+      //     //polyline function
+      //     break;
+      // }
     }
   }
 
@@ -228,6 +269,30 @@ class _GoogleMapsState extends State<GoogleMaps> {
         _fitToMarkers(); // First time only
       });
     }
+  }
+
+  void buildPolylines(){
+
+    /*for i in routes
+    //random color generator
+      for i in markers
+      if(_markers.route id == i. route id){
+        add to list of points
+      }
+      polyline(
+      id: i 
+      color: random color created
+      width: 5
+      points: point list
+      )
+
+      add to polyline set
+
+
+    setState(){
+      polylines = temp polyline sets
+    }
+    */
   }
 
   //didUpdateWidget is the dynamic way at noticing when one of the widgets from parent has changed
@@ -308,6 +373,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
         ..clear()
         ..addAll(updatedMarkers);
     });
+
+    //TODO:
+    //when you are changing the phase type it will need to rebuild off this change
   }
 
   @override
@@ -324,6 +392,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
           ),
           markers: _markers.values.toSet(),
           clusterManagers: {_myCluster},
+          // polylines: ,
           onCameraMove: (position) {
             _savedCenter = position.target;
             _savedZoom = position.zoom;

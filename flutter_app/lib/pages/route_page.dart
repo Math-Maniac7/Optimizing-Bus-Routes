@@ -179,6 +179,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                   cancelModify: _cancelModify,
                                   addMarker: _addMarker,
                                   interactionEnabled: !_isDrawerOpen,
+                                  phaseType: selectedPhase,
                                 ),
                               ),
                             ),
