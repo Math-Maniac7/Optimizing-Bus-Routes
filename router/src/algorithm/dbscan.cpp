@@ -6,14 +6,13 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <limits>
+#include <numeric>
 
 namespace dbscan {
 
 using std::vector;
 using node_t = int;
 using DistMap = std::unordered_map<node_t, ld>;
-static constexpr ld METERS_TO_MILES = 1.0L / 1609.34L;
-static inline ld m2g(ld m) { return m * METERS_TO_MILES; }
 
 static void dijkstra_cut(Graph* g, node_t start, ld cut, bool walk, DistMap& out) {
     out.clear(); if (start < 0 || start >= (node_t)g->nodes.size()) return;
@@ -64,7 +63,7 @@ static vector<vector<int>> make_clusters(const vector<Student*>&S,Graph*g,
     int N=S.size(); W.resize(N); D.resize(N); idmap.clear();
     for(int i=0;i<N;++i){W[i]=g->get_node(S[i]->pos,true);
         D[i]=g->get_node(S[i]->pos,false); idmap[S[i]->id]=i;}
-    ld r=m2g(P.seed_radius>0?P.seed_radius:P.max_walk_dist);
+    ld r=(P.seed_radius>0?P.seed_radius:P.max_walk_dist);
     vector<int>lab(N,-1); int cid=0;
     for(int i=0;i<N;++i){ if(lab[i]!=-1)continue;
         auto n=region_query(i,W,g,r,S);
@@ -129,6 +128,112 @@ static StopCandidate build_cand(const vector<int>&M,const vector<node_t>&W,const
     return c;
 }
 
+static const std::vector<std::pair<int, ld>>& cluster_neighbors(
+    int sid,
+    const std::vector<int>& cluster,
+    const vector<node_t>&W,
+    Graph*g,
+    const WalkParams&wp,
+    const std::vector<Student*>&S,
+    std::unordered_map<int,std::vector<std::pair<int,ld>>>&cache
+) {
+    auto it = cache.find(sid);
+    if(it != cache.end()) return it->second;
+
+    DistMap dist;
+    node_t start = walk_node_safe(g, W, sid, S);
+    dijkstra_cut(g, start, wp.max, true, dist);
+
+    std::vector<std::pair<int, ld>> res;
+    for(int other : cluster) {
+        if(other == sid) continue;
+        node_t target = walk_node_safe(g, W, other, S);
+        auto jt = dist.find(target);
+        if(jt != dist.end() && jt->second <= wp.max + 1e-6) {
+            res.push_back({other, jt->second});
+        }
+    }
+    std::sort(res.begin(), res.end(), [](const auto& a, const auto& b){return a.second < b.second;});
+    auto inserted = cache.emplace(sid, std::move(res));
+    return inserted.first->second;
+}
+
+static std::vector<std::vector<int>> partition_cluster(
+    const std::vector<int>& cluster,
+    const vector<node_t>&W,
+    Graph*g,
+    const WalkParams&wp,
+    const Params&P,
+    const std::vector<Student*>&S
+) {
+    std::vector<std::vector<int>> groups;
+    if(cluster.empty()) return groups;
+
+    std::unordered_map<int,int> pos;
+    for(int i=0;i<(int)cluster.size();++i) pos[cluster[i]] = i;
+    std::vector<bool> used(cluster.size(), false);
+    std::unordered_map<int,std::vector<std::pair<int,ld>>> neighbor_cache;
+    int max_group = (P.cap>0)?P.cap:INT_MAX;
+    int remaining = cluster.size();
+
+    while(remaining > 0) {
+        int best_idx = -1;
+        std::vector<std::pair<int,ld>> best_neighbors;
+        int best_gain = -1;
+
+        for(int i=0;i<(int)cluster.size();++i) {
+            if(used[i]) continue;
+            int sid = cluster[i];
+            const auto& neigh = cluster_neighbors(sid, cluster, W, g, wp, S, neighbor_cache);
+            std::vector<std::pair<int,ld>> filtered;
+            filtered.reserve(neigh.size());
+            for(const auto& pr : neigh) {
+                auto it = pos.find(pr.first);
+                if(it == pos.end()) continue;
+                if(used[it->second]) continue;
+                filtered.push_back(pr);
+            }
+            int gain = 1;
+            if(max_group > 1) gain += std::min<int>(max_group-1, filtered.size());
+            if(gain > best_gain) {
+                best_gain = gain;
+                best_idx = i;
+                best_neighbors = filtered;
+            }
+        }
+
+        if(best_idx == -1) break;
+        std::sort(best_neighbors.begin(), best_neighbors.end(), [](const auto& a,const auto& b){return a.second < b.second;});
+
+        std::vector<int> group;
+        group.push_back(cluster[best_idx]);
+        if(!used[best_idx]) {
+            used[best_idx] = true;
+            remaining--;
+        }
+
+        for(const auto& pr : best_neighbors) {
+            if((int)group.size() >= max_group) break;
+            auto it = pos.find(pr.first);
+            if(it == pos.end()) continue;
+            int idx = it->second;
+            if(used[idx]) continue;
+            used[idx] = true;
+            remaining--;
+            group.push_back(cluster[idx]);
+        }
+        groups.push_back(group);
+    }
+
+    for(int i=0;i<(int)cluster.size();++i) {
+        if(!used[i]) {
+            groups.push_back({cluster[i]});
+            used[i] = true;
+        }
+    }
+
+    return groups;
+}
 
 static void dedup(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd){
     std::unordered_map<node_t,size_t>k;vector<bool>rem(st.size(),false);
@@ -149,18 +254,54 @@ static void refine(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd,
     const vector<Student*>&S,const std::unordered_map<sid_t,int>&map,
     const vector<node_t>&W,const vector<node_t>&D,Graph*g,const WalkParams&wp,const Params&P){
     dedup(st,sw,sd);
-    // reassign every student to closest reachable stop
     vector<DistMap>cov(st.size());
     for(size_t i=0;i<st.size();++i)dijkstra_cut(g,sw[i],wp.max,true,cov[i]);
     vector<vector<sid_t>>ns(st.size());
-    for(auto&[sid,idx]:map){
-        node_t sn=W[idx];ld bd=std::numeric_limits<ld>::max();int bi=-1;
+    std::vector<bool>assigned(S.size(),false);
+
+    auto add_stop_for_student=[&](int idx)->size_t{
+        StopCandidate cand=build_cand({idx},W,D,S,g,wp);
+        if(!cand.coord){
+            cand.coord=S[idx]->pos->make_copy();
+            cand.walk=walk_node_safe(g,W,idx,S);
+            cand.drive=D[idx];
+        }
+        auto*stop=new BusStop((bsid_t)st.size(),cand.coord,{});
+        st.push_back(stop);
+        sw.push_back(cand.walk);
+        sd.push_back(cand.drive);
+        ns.emplace_back();
+        cov.emplace_back();
+        dijkstra_cut(g,cand.walk,wp.max,true,cov.back());
+        return st.size()-1;
+    };
+
+    for(const auto&entry:map){
+        sid_t sid=entry.first;
+        int idx=entry.second;
+        node_t sn=W[idx];
+        ld best=std::numeric_limits<ld>::max();
+        int bi=-1;
         for(size_t s=0;s<st.size();++s){
             auto it=cov[s].find(sn);
-            if(it!=cov[s].end()&&it->second<=wp.max+1e-6&&it->second<bd){bd=it->second;bi=s;}
+            if(it==cov[s].end())continue;
+            if(it->second>wp.max+1e-6)continue;
+            if(it->second<best){best=it->second;bi=s;}
         }
-        if(bi==-1)bi=0;ns[bi].push_back(sid);
+        if(bi==-1){
+            bi=static_cast<int>(add_stop_for_student(idx));
+        }
+        ns[bi].push_back(sid);
+        assigned[idx]=true;
     }
+
+    for(size_t i=0;i<assigned.size();++i){
+        if(assigned[i])continue;
+        size_t bi=add_stop_for_student(static_cast<int>(i));
+        ns[bi].push_back(S[i]->id);
+        assigned[i]=true;
+    }
+
     vector<BusStop*>S2;vector<node_t>W2,D2;
     for(size_t i=0;i<st.size();++i)if(!ns[i].empty()){
         st[i]->students=ns[i];st[i]->id=S2.size();
@@ -169,12 +310,133 @@ static void refine(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd,
     dedup(st,sw,sd);
 }
 
+static std::vector<std::vector<int>> plan_global_groups(
+    const vector<node_t>&W,
+    Graph*g,
+    const WalkParams&wp,
+    const Params&P,
+    const std::vector<Student*>&S,
+    size_t target
+) {
+    std::vector<std::vector<int>> groups;
+    size_t N = S.size();
+    if(N == 0) return groups;
+    std::vector<int> universe(N);
+    std::iota(universe.begin(), universe.end(), 0);
+    std::vector<bool> used(N,false);
+    int remaining = (int)N;
+    target = std::max<size_t>(1, std::min(target, N));
+    std::unordered_map<int,std::vector<std::pair<int,ld>>> neighbor_cache;
+
+    auto build_from_seed = [&](int seed, int desired){
+        std::vector<int> subset;
+        subset.push_back(seed);
+        const auto& neigh = cluster_neighbors(seed, universe, W, g, wp, S, neighbor_cache);
+        for(const auto& pr : neigh) {
+            if(used[pr.first]) continue;
+            subset.push_back(pr.first);
+            if(P.cap > 0 && (int)subset.size() >= P.cap) break;
+            if((int)subset.size() >= desired) break;
+        }
+        return subset;
+    };
+
+    while(remaining > 0) {
+        size_t remaining_slots = (groups.size() < target) ? (target - groups.size()) : 1;
+        int desired = (remaining + (int)remaining_slots - 1) / (int)remaining_slots;
+        if(P.cap > 0) desired = std::min(desired, P.cap);
+        int best_seed = -1;
+        std::vector<int> best_group;
+        for(int i = 0; i < (int)N; ++i) {
+            if(used[i]) continue;
+            auto candidate = build_from_seed(i, desired);
+            if(candidate.size() > best_group.size()) {
+                best_seed = i;
+                best_group = std::move(candidate);
+                if((int)best_group.size() >= desired) break;
+            }
+        }
+        if(best_seed == -1) break;
+        for(int idx : best_group) {
+            if(!used[idx]) {
+                used[idx] = true;
+                --remaining;
+            }
+        }
+        groups.push_back(std::move(best_group));
+    }
+    if(remaining > 0) {
+        for(int i = 0; i < (int)N; ++i) {
+            if(used[i]) continue;
+            groups.push_back({i});
+            used[i] = true;
+        }
+    }
+    return groups;
+}
+
+static void consolidate_global(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd,
+    const vector<Student*>&S,const vector<node_t>&W,const vector<node_t>&D,
+    Graph*g,const WalkParams&wp,const Params&P){
+    if(P.target_stop_count <= 0) return;
+    size_t target = std::max<size_t>(1, P.target_stop_count);
+    if(st.size() <= target) return;
+    auto groups = plan_global_groups(W, g, wp, P, S, target);
+    if(groups.empty()) return;
+
+    std::vector<BusStop*> rebuilt;
+    std::vector<node_t> new_sw, new_sd;
+    rebuilt.reserve(groups.size());
+    std::vector<bool> covered(S.size(), false);
+    for(auto& group : groups) {
+        if(group.empty()) continue;
+        auto cand = build_cand(group, W, D, S, g, wp);
+        if(!cand.coord) {
+            cand.coord = S[group.front()]->pos->make_copy();
+            cand.walk = walk_node_safe(g, W, group.front(), S);
+            cand.drive = D[group.front()];
+        }
+        BusStop* stop = new BusStop((bsid_t)rebuilt.size(), cand.coord, {});
+        std::unordered_set<int> included(cand.cover.begin(), cand.cover.end());
+        for(int idx : cand.cover) {
+            stop->students.push_back(S[idx]->id);
+            covered[idx] = true;
+        }
+        for(int idx : group) {
+            if(included.count(idx)) continue;
+            stop->students.push_back(S[idx]->id);
+            covered[idx] = true;
+        }
+        rebuilt.push_back(stop);
+        new_sw.push_back(cand.walk);
+        new_sd.push_back(cand.drive);
+    }
+    for(int i = 0; i < (int)S.size(); ++i) {
+        if(covered[i]) continue;
+        StopCandidate cand = build_cand({i}, W, D, S, g, wp);
+        if(!cand.coord) {
+            cand.coord = S[i]->pos->make_copy();
+            cand.walk = walk_node_safe(g, W, i, S);
+            cand.drive = D[i];
+        }
+        BusStop* stop = new BusStop((bsid_t)rebuilt.size(), cand.coord, {S[i]->id});
+        rebuilt.push_back(stop);
+        new_sw.push_back(cand.walk);
+        new_sd.push_back(cand.drive);
+        covered[i] = true;
+    }
+    st.swap(rebuilt);
+    sw.swap(new_sw);
+    sd.swap(new_sd);
+    dedup(st,sw,sd);
+}
+
 vector<BusStop*> run(const vector<Student*>&S,Graph*g,const Params&Pin){
     Params P=Pin;
     if(P.seed_radius<=0)P.seed_radius=P.max_walk_dist;
     if(P.assign_radius<=0)P.assign_radius=P.max_walk_dist;
     if(P.cap<=0)P.cap=INT_MAX;if(P.min_pts<=0)P.min_pts=1;
-    WalkParams wp{m2g(P.max_walk_dist),m2g(P.assign_radius),m2g(std::max(P.max_walk_dist,60.0))};
+    WalkParams wp{P.max_walk_dist,P.assign_radius,std::max(P.max_walk_dist,60.0)};
     vector<node_t>W,D;std::unordered_map<sid_t,int>map;
     auto clusters=make_clusters(S,g,P,W,D,map);
     vector<BusStop*>st;vector<node_t>sw,sd;vector<bool>as(S.size(),false);
@@ -186,11 +448,13 @@ vector<BusStop*> run(const vector<Student*>&S,Graph*g,const Params&Pin){
         sw.push_back(c.walk);sd.push_back(c.drive);
     };
     for(auto&M:clusters){
-        for(auto&chunk:{M})emit(build_cand(M,W,D,S,g,wp)); 
+        auto groups = partition_cluster(M, W, g, wp, P, S);
+        for(auto& subset : groups) emit(build_cand(subset, W, D, S, g, wp));
     }
     for(int i=0;i<(int)S.size();++i)
         if(!as[i])emit(build_cand({i},W,D,S,g,wp));
     refine(st,sw,sd,S,map,W,D,g,wp,P);
+    consolidate_global(st,sw,sd,S,W,D,g,wp,P);
     return st;
 }
 vector<BusStop*> place_stops(const vector<Student*>&S,Graph*g,const Params&P,

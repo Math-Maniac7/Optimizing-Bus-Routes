@@ -17,6 +17,7 @@ struct Params {
     double assign_radius = -1.0; // Reassignment radius after initial stop placement
     int cap = -1;          // Max students per stop (optional; set to large number to disable)
     int min_pts = 1;       // Minimum cluster size (before growing/assignment)
+    int target_stop_count = -1; // Desired upper bound on the final number of stops
 };
 
 
