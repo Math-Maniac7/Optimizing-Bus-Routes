@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:convert';
+import 'dart:async';
+import 'dart:html' as html;
+import 'dart:ui_web' as ui_web;
 import '../widgets/maps.dart';
 import '../widgets/location_upload_drawer.dart';
 import '../WASM/wasm_interop.dart';
@@ -45,10 +48,12 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   bool _isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
+  bool _isDrawerProcessing = false;
   int _addMarker = 0;
   bool _saveMarkers = false;
   bool _cancelModify = false;
   int _mapReloadKey = 0;
+  Completer<void>? _routeGenerationCompleter;
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +64,17 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       key: _scaffoldKey,
       backgroundColor: const Color.fromRGBO(57, 103, 136, 1),
       onEndDrawerChanged: (isOpened) {
-        setState(() {
-          _isDrawerOpen = isOpened;
-        });
+        // Prevent closing if processing
+        if (!isOpened && _isDrawerProcessing) {
+          // Re-open the drawer if it was closed while processing
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scaffoldKey.currentState?.openEndDrawer();
+          });
+        } else {
+          setState(() {
+            _isDrawerOpen = isOpened;
+          });
+        }
       },
       body: Stack(
         children: [
@@ -217,35 +230,22 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                 child: Container(color: Colors.transparent),
               ),
             ),
-          // Loading overlay when generating routes
+          // Loading overlay when generating routes - uses independent animation
           if (_isGeneratingRoutes)
             Positioned.fill(
-              child: Container(
-                color: Colors.black54,
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Generating routes...',
-                        style: GoogleFonts.quicksand(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: _IndependentLoadingOverlay(
+                completer: _routeGenerationCompleter,
               ),
             ),
         ],
       ),
-      endDrawer: const LocationUploadDrawer(),
+      endDrawer: LocationUploadDrawer(
+        onProcessingChanged: (isProcessing) {
+          setState(() {
+            _isDrawerProcessing = isProcessing;
+          });
+        },
+      ),
     );
   }
 
@@ -332,9 +332,17 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       return;
     }
 
+    // Create completer to track completion
+    _routeGenerationCompleter = Completer<void>();
+    
+    // Show spinner first
     setState(() {
       _isGeneratingRoutes = true;
     });
+
+    // Ensure UI updates before blocking WASM call
+    await Future.microtask(() {});
+    await WidgetsBinding.instance.endOfFrame;
 
     try {
       // Convert JSON map to string
@@ -357,6 +365,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           'No stops found in phase 1 result.',
           isError: true,
         );
+        _routeGenerationCompleter?.complete();
         return;
       }
       debugPrint('Extracted ${stops.length} stops from BRP JSON');
@@ -383,12 +392,34 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       });
 
       _showMessage('Routes generated successfully!', isError: false);
+      
+      // Complete the completer to signal spinner can stop
+      _routeGenerationCompleter?.complete();
     } catch (e) {
       debugPrint('Error generating routes: $e');
-      _showMessage('Error generating routes: ${e.toString()}', isError: true);
+      
+      // Provide user-friendly error messages
+      String errorMessage;
+      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
+        errorMessage = 'Route generation timed out. The Overpass API may be experiencing high load. '
+            'Please try again in a few minutes.';
+      } else if (e.toString().contains('Overpass HTTP') || e.toString().contains('504')) {
+        errorMessage = 'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
+            'This is a temporary problem with the external service. Please try again later.';
+      } else if (e.toString().contains('WASM Error')) {
+        errorMessage = 'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
+      } else {
+        errorMessage = 'Error generating routes: ${e.toString()}';
+      }
+      
+      _showMessage(errorMessage, isError: true);
+      _routeGenerationCompleter?.complete();
     } finally {
+      // Wait a moment for the spinner to finish its animation
+      await Future.delayed(const Duration(milliseconds: 300));
       setState(() {
         _isGeneratingRoutes = false;
+        _routeGenerationCompleter = null;
       });
     }
   }
@@ -423,9 +454,17 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       return;
     }
 
+    // Create completer to track completion
+    _routeGenerationCompleter = Completer<void>();
+    
+    // Show spinner first
     setState(() {
       _isGeneratingRoutes = true;
     });
+
+    // Ensure UI updates before blocking WASM call
+    await Future.microtask(() {});
+    await WidgetsBinding.instance.endOfFrame;
 
     try {
       // Convert JSON map to string
@@ -448,6 +487,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           'No assignments found in phase 2 result.',
           isError: true,
         );
+        _routeGenerationCompleter?.complete();
         return;
       }
       debugPrint('Extracted ${assignments.length} assignments from BRP JSON');
@@ -477,12 +517,34 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       });
 
       _showMessage('Routes generated successfully!', isError: false);
+      
+      // Complete the completer to signal spinner can stop
+      _routeGenerationCompleter?.complete();
     } catch (e) {
       debugPrint('Error generating routes: $e');
-      _showMessage('Error generating routes: ${e.toString()}', isError: true);
+      
+      // Provide user-friendly error messages
+      String errorMessage;
+      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
+        errorMessage = 'Route generation timed out. The Overpass API may be experiencing high load. '
+            'Please try again in a few minutes.';
+      } else if (e.toString().contains('Overpass HTTP') || e.toString().contains('504')) {
+        errorMessage = 'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
+            'This is a temporary problem with the external service. Please try again later.';
+      } else if (e.toString().contains('WASM Error')) {
+        errorMessage = 'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
+      } else {
+        errorMessage = 'Error generating routes: ${e.toString()}';
+      }
+      
+      _showMessage(errorMessage, isError: true);
+      _routeGenerationCompleter?.complete();
     } finally {
+      // Wait a moment for the spinner to finish its animation
+      await Future.delayed(const Duration(milliseconds: 300));
       setState(() {
         _isGeneratingRoutes = false;
+        _routeGenerationCompleter = null;
       });
     }
   }
@@ -526,9 +588,17 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       return;
     }
 
+    // Create completer to track completion
+    _routeGenerationCompleter = Completer<void>();
+    
+    // Show spinner first
     setState(() {
       _isGeneratingRoutes = true;
     });
+
+    // Ensure UI updates before blocking WASM call
+    await Future.microtask(() {});
+    await WidgetsBinding.instance.endOfFrame;
 
     try {
       // Convert JSON map to string
@@ -551,6 +621,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           'No routes found in phase 3 result.',
           isError: true,
         );
+        _routeGenerationCompleter?.complete();
         return;
       }
       debugPrint('Extracted ${routes.length} routes from BRP JSON');
@@ -583,12 +654,34 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       });
 
       _showMessage('Routes generated successfully!', isError: false);
+      
+      // Complete the completer to signal spinner can stop
+      _routeGenerationCompleter?.complete();
     } catch (e) {
       debugPrint('Error generating routes: $e');
-      _showMessage('Error generating routes: ${e.toString()}', isError: true);
+      
+      // Provide user-friendly error messages
+      String errorMessage;
+      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
+        errorMessage = 'Route generation timed out. The Overpass API may be experiencing high load. '
+            'Please try again in a few minutes.';
+      } else if (e.toString().contains('Overpass HTTP') || e.toString().contains('504')) {
+        errorMessage = 'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
+            'This is a temporary problem with the external service. Please try again later.';
+      } else if (e.toString().contains('WASM Error')) {
+        errorMessage = 'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
+      } else {
+        errorMessage = 'Error generating routes: ${e.toString()}';
+      }
+      
+      _showMessage(errorMessage, isError: true);
+      _routeGenerationCompleter?.complete();
     } finally {
+      // Wait a moment for the spinner to finish its animation
+      await Future.delayed(const Duration(milliseconds: 300));
       setState(() {
         _isGeneratingRoutes = false;
+        _routeGenerationCompleter = null;
       });
     }
   }
@@ -631,5 +724,123 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       _isModified = false;
       _saveMarkers = false;
     });
+  }
+}
+
+/// A loading overlay widget that uses CSS animations
+/// which run on the browser's compositor thread, independent of JavaScript execution.
+/// This allows the spinner to continue animating even when WASM blocks the main thread.
+class _IndependentLoadingOverlay extends StatefulWidget {
+  final Completer<void>? completer;
+
+  const _IndependentLoadingOverlay({
+    required this.completer,
+  });
+
+  @override
+  State<_IndependentLoadingOverlay> createState() =>
+      _IndependentLoadingOverlayState();
+}
+
+class _IndependentLoadingOverlayState extends State<_IndependentLoadingOverlay> {
+  static int _spinnerCounter = 0;
+  late String _spinnerId;
+  bool _isComplete = false;
+  bool _isRegistered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinnerId = 'css_spinner_${_spinnerCounter++}';
+    _createCssSpinner();
+    _registerPlatformView();
+
+    // Listen for completion
+    widget.completer?.future.then((_) {
+      if (mounted) {
+        setState(() {
+          _isComplete = true;
+        });
+        _removeCssSpinner();
+      }
+    });
+  }
+
+  void _createCssSpinner() {
+    // Inject CSS for the spinner animation
+    final style = html.StyleElement()
+      ..id = '${_spinnerId}_style'
+      ..text = '''
+        @keyframes ${_spinnerId}_spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        #$_spinnerId {
+          animation: ${_spinnerId}_spin 1s linear infinite;
+          width: 50px;
+          height: 50px;
+          border: 4px solid rgba(255, 255, 255, 0.3);
+          border-top: 4px solid white;
+          border-radius: 50%;
+        }
+      ''';
+    html.document.head!.append(style);
+  }
+
+  void _registerPlatformView() {
+    if (!_isRegistered) {
+      ui_web.platformViewRegistry.registerViewFactory(
+        _spinnerId,
+        (int viewId) {
+          final div = html.DivElement()
+            ..id = _spinnerId
+            ..style.width = '50px'
+            ..style.height = '50px';
+          return div;
+        },
+      );
+      _isRegistered = true;
+    }
+  }
+
+  void _removeCssSpinner() {
+    final styleElement = html.document.getElementById('${_spinnerId}_style');
+    styleElement?.remove();
+  }
+
+  @override
+  void dispose() {
+    _removeCssSpinner();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Container(
+        color: Colors.black54,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 50,
+                height: 50,
+                child: HtmlElementView(viewType: _spinnerId),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Generating routes...',
+                style: GoogleFonts.quicksand(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

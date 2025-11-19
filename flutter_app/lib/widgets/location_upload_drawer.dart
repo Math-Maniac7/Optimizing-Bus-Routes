@@ -1,13 +1,18 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/csv_parser.dart';
 import '../services/geocoding_service.dart';
 import '../services/storage_service.dart';
+import '../utils/sample_download.dart';
 
 class LocationUploadDrawer extends StatefulWidget {
-  const LocationUploadDrawer({super.key});
+  final ValueChanged<bool>? onProcessingChanged;
+  
+  const LocationUploadDrawer({super.key, this.onProcessingChanged});
 
   @override
   State<LocationUploadDrawer> createState() => _LocationUploadDrawerState();
@@ -106,8 +111,10 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
 
   @override
   Widget build(BuildContext context) {
-    return Drawer(
-      child: Container(
+    return PopScope(
+      canPop: !_isProcessing,
+      child: Drawer(
+        child: Container(
         width: MediaQuery.of(context).size.width * 0.8,
         decoration: const BoxDecoration(
           color: Color.fromRGBO(57, 103, 136, 1),
@@ -131,8 +138,12 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                   ),
                 ),
                 IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close,
+                    color: _isProcessing ? Colors.white38 : Colors.white,
+                  ),
+                  tooltip: _isProcessing ? 'Cannot close while processing' : 'Close',
                 ),
               ],
             ),
@@ -153,6 +164,35 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                 fontSize: 14,
                 fontStyle: FontStyle.italic,
                 color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Sample download button
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: _downloadSampleTemplate,
+                icon: const Icon(Icons.download, color: Colors.white),
+                label: Text(
+                  'Download Sample Template (.xlsx)',
+                  style: GoogleFonts.quicksand(
+                    fontSize: 16,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: ButtonStyle(
+                  backgroundColor: const WidgetStatePropertyAll<Color>(
+                    Color.fromARGB(160, 255, 255, 255),
+                  ),
+                  padding: const WidgetStatePropertyAll<EdgeInsets>(
+                    EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  ),
+                  shape: WidgetStatePropertyAll<RoundedRectangleBorder>(
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -300,6 +340,24 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
                         color: Colors.white,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade900.withOpacity(0.3),
+                        border: Border.all(color: Colors.orange.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Please wait - drawer cannot be closed during processing',
+                        style: GoogleFonts.quicksand(
+                          fontSize: 12,
+                          color: Colors.orange.shade100,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -376,6 +434,7 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
           ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -566,6 +625,7 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
       _errorMessage = null;
       _successMessage = null;
     });
+    widget.onProcessingChanged?.call(true);
 
     try {
       print('DEBUG: Starting CSV processing...');
@@ -648,13 +708,41 @@ class _LocationUploadDrawerState extends State<LocationUploadDrawer> {
         _isProcessing = false;
         _successMessage = 'Locations processed successfully!';
       });
+      widget.onProcessingChanged?.call(false);
     } catch (e) {
       setState(() {
         _isProcessing = false;
         _errorMessage = 'Error processing CSV: $e';
       });
+      widget.onProcessingChanged?.call(false);
     }
   }
 
-
+  Future<void> _downloadSampleTemplate() async {
+    try {
+      final byteData = await rootBundle.load('assets/sample_locations.xlsx');
+      final bytes = byteData.buffer.asUint8List();
+      await downloadSampleFile(bytes, 'sample_locations.xlsx');
+      if (!kIsWeb && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sample template is bundled with the app assets.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } on UnsupportedError catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Downloading the sample file is only available on web builds.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to download sample file: $e')),
+      );
+    }
+  }
 }
