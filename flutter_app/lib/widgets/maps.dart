@@ -52,8 +52,11 @@ class GoogleMaps extends StatefulWidget {
 class _GoogleMapsState extends State<GoogleMaps> {
   late GoogleMapController
   mapController; //controller that connects movements made on map
-  final ClusterManager _myCluster = ClusterManager(
-    clusterManagerId: ClusterManagerId('my cluster'),
+  final ClusterManager _myClusterPeople = ClusterManager(
+    clusterManagerId: ClusterManagerId('people'),
+  );
+  final ClusterManager _myClusterStops = ClusterManager(
+    clusterManagerId: ClusterManagerId('stops'),
   );
   final Map<String, Marker> _markers = {};
   Set<Polyline> polylines = {};
@@ -157,51 +160,42 @@ class _GoogleMapsState extends State<GoogleMaps> {
     //creates the bitmapmarkers that creates our custom colors for markers
     await initIcon();
     if (StorageService.hasBusRouteData()) {
-      final jsonData = StorageService.getBusRouteData();
-      if (jsonData != null && jsonData['stops'] != null) {
-        stops = jsonData['stops'];
-        buildMarkers(stops, MarkerType.stop);
-      }
-      if (jsonData != null && jsonData['students'] != null) {
-        students = jsonData['students'];
-        buildMarkers(students, MarkerType.student);
-      }
       //Depending on the phase, different visualizations will be implemented.
       /*
       Phase 1 - Bus stops and students
       Phase 2 - Bus stops with bus assignments(this will only be seen in the marker information sidebar)
       Phase 3 - Bus routes 
       */
-      // switch (phase) {
-      //   case null:
-      //     throw UnimplementedError();
-      //   case Phase.phaseOne:
-      //     // TODO: Handle this case.
-      //     if (jsonData != null && jsonData['stops'] != null) {
-      //       stops = jsonData['stops'];
-      //       buildMarkers(stops, MarkerType.stop);
-      //     }
-      //     if (jsonData != null && jsonData['students'] != null) {
-      //       students = jsonData['students'];
-      //       buildMarkers(students, MarkerType.student);
-      //     }
-      //     break;
-      //   case Phase.phaseTwo:
-      //     // TODO: Handle this case.
-      //     if (jsonData != null && jsonData['stops'] != null) {
-      //       stops = jsonData['stops'];
-      //       buildMarkers(stops, MarkerType.stop);
-      //     }
-      //     break;
-      //   case Phase.phaseThree:
-      //     // TODO: Handle this case.
-      //     if (jsonData != null && jsonData['stops'] != null) {
-      //       stops = jsonData['stops'];
-      //       buildMarkers(stops, MarkerType.stop);
-      //     }
-      //     //polyline function
-      //     break;
-      // }
+
+      final jsonData = StorageService.getBusRouteData();
+      switch (phase) {
+        case null:
+          throw UnimplementedError();
+        case Phase.phaseOne:
+          if (jsonData != null && jsonData['stops'] != null) {
+            stops = jsonData['stops'];
+            buildMarkers(stops, MarkerType.stop);
+          }
+          if (jsonData != null && jsonData['students'] != null) {
+            students = jsonData['students'];
+            buildMarkers(students, MarkerType.student);
+          }
+          break;
+        case Phase.phaseTwo:
+          if (jsonData != null && jsonData['stops'] != null) {
+            stops = jsonData['stops'];
+            buildMarkers(stops, MarkerType.stop);
+          }
+          break;
+        case Phase.phaseThree:
+          // TODO: Handle this case.
+          if (jsonData != null && jsonData['stops'] != null) {
+            stops = jsonData['stops'];
+            buildMarkers(stops, MarkerType.stop);
+          }
+          //polyline function
+          break;
+      }
     }
   }
 
@@ -230,7 +224,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
             });
           }
         },
-        clusterManagerId: _myCluster.clusterManagerId,
+        clusterManagerId: (flag == MarkerType.stop)
+            ? _myClusterStops.clusterManagerId
+            : _myClusterPeople.clusterManagerId,
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.isModified,
@@ -271,8 +267,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
     }
   }
 
-  void buildPolylines(){
-
+  void buildPolylines() {
     /*for i in routes
     //random color generator
       for i in markers
@@ -391,7 +386,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
             zoom: _savedZoom ?? 15,
           ),
           markers: _markers.values.toSet(),
-          clusterManagers: {_myCluster},
+          clusterManagers: {_myClusterStops, _myClusterPeople},
           // polylines: ,
           onCameraMove: (position) {
             _savedCenter = position.target;
@@ -506,6 +501,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                   _markers.remove(
                                     '${markerType}_$touchedMarkerId',
                                   );
+
+                                  
                                   buildMarkers(stops, MarkerType.stop);
                                   buildMarkers(students, MarkerType.student);
 
