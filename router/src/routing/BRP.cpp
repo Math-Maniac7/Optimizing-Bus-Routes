@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <random>
 #include <ctime>
+#include <cmath>
+#include <limits>
 #include "../utils.h"
 #include "../algorithm/mcmf.h"
 #include "../algorithm/dbscan.h"
@@ -207,7 +209,7 @@ json BRP::to_geojson() {
         features.push_back(feature);
     }
     
-    // bus stops + students
+    // bus stops + students (phase 1 visualization)
     static const char* PAL[] = {
         "#e41a1c","#377eb8","#4daf4a","#984ea3",
         "#ff7f00","#ffff33","#a65628","#f781bf",
@@ -217,17 +219,11 @@ json BRP::to_geojson() {
     };
     const size_t PAL_N = sizeof(PAL)/sizeof(PAL[0]);
 
-    if (this->stops.has_value()) {
+    if (this->stops.has_value() && !this->assignments.has_value()) {
         for (size_t i = 0; i < this->stops.value().size(); ++i) {
             BusStop *stop = this->stops.value()[i];
-            Coordinate *pos = stop->pos;
+            Coordinate *stop_pos = stop->pos;
             const char* color = PAL[i % PAL_N];
-
-    //students
-    if(!this->assignments.has_value()) {
-        for(int i = 0; i < this->students.size(); i++) {
-            Student *student = this->students[i];
-            Coordinate *pos = student->pos;
 
             json stop_feature = {
                 {"type", "Feature"},
@@ -235,18 +231,18 @@ json BRP::to_geojson() {
                     {"name", "stop " + std::to_string(stop->id)},
                     {"marker-size", "large"},
                     {"marker-color", color}
-                    {"name", "student " + std::to_string(student->id)},
-                    {"marker-size", "small"}
                 }},
                 {"geometry", {
                     {"type", "Point"},
-                    {"coordinates", {pos->lon, pos->lat}}
+                    {"coordinates", {stop_pos->lon, stop_pos->lat}}
                 }}
             };
             features.push_back(stop_feature);
 
             for (sid_t sid : stop->students) {
                 Student* stu = this->get_student(sid);
+                Coordinate *stu_pos = stu->pos;
+
                 json stu_feature = {
                     {"type", "Feature"},
                     {"properties", {
@@ -256,54 +252,11 @@ json BRP::to_geojson() {
                     }},
                     {"geometry", {
                         {"type", "Point"},
-                        {"coordinates", {stu->pos->lon, stu->pos->lat}}
+                        {"coordinates", {stu_pos->lon, stu_pos->lat}}
                     }}
                 };
                 features.push_back(stu_feature);
-            }
-        }
-    }
-    
-    //bus stops
-    if(this->stops.has_value() && !this->assignments.has_value()) {
-        for(int i = 0; i < this->stops.value().size(); i++) {
-            BusStop *stop = this->stops.value()[i];
-            Coordinate *pos = stop->pos;
 
-            {
-                json feature = {
-                    {"type", "Feature"},
-                    {"properties", {
-                        {"name", "stop " + std::to_string(stop->id)},
-                        {"marker-size", "medium"}
-                    }},
-                    {"geometry", {
-                        {"type", "Point"},
-                        {"coordinates", {pos->lon, pos->lat}}
-                    }}
-                };
-                features.push_back(feature);
-            }
-            
-            for(int j = 0; j < stop->students.size(); j++) {
-                Student *student = this->get_student(stop->students[j]);
-                Coordinate *spos = student->pos;
-
-                json coords = json::array();
-                coords.push_back({spos->lon, spos->lat});
-                coords.push_back({pos->lon, pos->lat});
-
-                json feature = {
-                    {"type", "Feature"},
-                    {"properties", {
-                        {"name", "bus stop assignment"}
-                    }},
-                    {"geometry", {
-                        {"type", "LineString"},
-                        {"coordinates", coords}
-                    }}
-                };
-                features.push_back(feature);
             }
         }
     }
@@ -650,12 +603,57 @@ void BRP::do_p1() {
     Graph* graph = this->create_graph();
 
     dbscan::Params P;
-    P.max_walk_dist = 90.0;
-    P.merge_dist = 50.0;
-    P.seed_radius = 35.0;
-    P.assign_radius = 90.0;
-    P.cap = 12;
-    P.min_pts = 3;
+    const double base_walk = 120.0;
+    const double base_seed = 60.0;
+    const int base_cap = 15;
+
+    const size_t student_cnt = this->students.size();
+    const size_t raw_bus_cnt = this->buses.size();
+    const double bus_cnt = raw_bus_cnt > 0 ? static_cast<double>(raw_bus_cnt) : 1.0;
+
+    double total_capacity = 0.0;
+    int min_capacity = std::numeric_limits<int>::max();
+    int max_capacity = 0;
+    for(Bus* bus : this->buses) {
+        total_capacity += std::max(0, bus->capacity);
+        min_capacity = std::min(min_capacity, bus->capacity);
+        max_capacity = std::max(max_capacity, bus->capacity);
+    }
+    if(min_capacity == std::numeric_limits<int>::max()) {
+        min_capacity = base_cap * 2;
+    }
+    if(max_capacity <= 0) {
+        max_capacity = std::max(min_capacity, base_cap * 2);
+    }
+    double avg_capacity = (raw_bus_cnt > 0 && total_capacity > 0.0) ? (total_capacity / bus_cnt) : max_capacity;
+    double students_per_bus = bus_cnt > 0.0 ? (static_cast<double>(student_cnt) / bus_cnt) : static_cast<double>(student_cnt);
+
+    double demand_scale = base_cap > 0 ? std::max(1.0, students_per_bus / (base_cap * 0.85)) : 1.0;
+    double fleet_scale = 1.0 + 0.5 / bus_cnt;
+    double capacity_scale = avg_capacity > 0.0 ? std::clamp(avg_capacity / 55.0, 0.7, 1.4) : 1.0;
+    double cap_scale = std::min(3.5, demand_scale * fleet_scale * capacity_scale);
+    int scaled_cap = std::max(base_cap, static_cast<int>(std::round(base_cap * cap_scale)));
+    int cap_ceiling = std::max(max_capacity, min_capacity);
+    if(cap_ceiling <= 0) cap_ceiling = scaled_cap;
+
+    P.max_walk_dist = base_walk;
+    P.assign_radius = base_walk;
+    P.seed_radius = std::min(P.max_walk_dist, base_seed * std::min(1.5, 0.75 + 0.25 * cap_scale));
+    P.merge_dist = P.seed_radius;
+    P.cap = std::min(scaled_cap, cap_ceiling);
+    P.min_pts = 2;
+
+    double desired_stop_load = std::min<double>(
+        P.cap > 0 ? P.cap : base_cap,
+        std::max<double>(8.0, (P.cap > 0 ? P.cap : base_cap) * 0.8)
+    );
+    size_t load_goal = desired_stop_load > 0.0
+        ? static_cast<size_t>(std::ceil(static_cast<double>(student_cnt) / desired_stop_load))
+        : student_cnt;
+    size_t bus_goal = raw_bus_cnt > 0 ? std::max<size_t>(1, raw_bus_cnt * 2) : 1;
+    size_t target_stops = std::max(bus_goal, load_goal);
+    target_stops = std::min(target_stops, student_cnt == 0 ? static_cast<size_t>(0) : student_cnt);
+    P.target_stop_count = static_cast<int>(target_stops);
 
     std::unordered_map<sid_t, bsid_t> sid2bsid;
     this->stops = dbscan::place_stops(this->students, graph, P, sid2bsid);
