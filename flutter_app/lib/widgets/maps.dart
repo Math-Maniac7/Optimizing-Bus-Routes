@@ -296,37 +296,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   void didUpdateWidget(covariant GoogleMaps oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.addMarker < widget.addMarker) {
-      final center = _savedCenter ?? const LatLng(30.622405, -96.353055);
-
-      final nextId = (stops.isEmpty)
-          ? 1
-          : (stops.map((s) => s['id'] as int).reduce((a, b) => a > b ? a : b) +
-                1);
-
-      final newStop = {
-        'id': nextId,
-        'pos': {'lat': center.latitude, 'lon': center.longitude},
-      };
-
-      setState(() {
-        stops.add(newStop);
-        buildMarkers(stops, MarkerType.stop);
-      });
-    }
-
-    if (!oldWidget.isSaved && widget.isSaved) {
-      final jsonData = StorageService.getBusRouteData();
-      final data = jsonData != null
-          ? Map<String, dynamic>.from(jsonData)
-          : <String, dynamic>{};
-      data['stops'] = stops;
-      data['students'] = students;
-      StorageService.saveBusRouteData(data);
-      buildMarkers(stops, MarkerType.stop);
-      buildMarkers(students, MarkerType.student);
-    }
-
+    //Modify, you save the current stops to revert if you do not save
     if (!oldWidget.isModified && widget.isModified) {
       _originalStops = stops
           .map(
@@ -346,6 +316,19 @@ class _GoogleMapsState extends State<GoogleMaps> {
           .toList();
     }
 
+    //when modify is clicked you can update the markers to moveable
+    final updatedMarkers = <String, Marker>{};
+    _markers.forEach((key, marker) {
+      updatedMarkers[key] = marker.copyWith(draggableParam: widget.isModified);
+    });
+
+    setState(() {
+      _markers
+        ..clear()
+        ..addAll(updatedMarkers);
+    });
+
+    //When cancel reset to original marker positions
     if (!oldWidget.cancelModify && widget.cancelModify) {
       if (_originalStops != null && _originalStudents != null) {
         stops = List.from(_originalStops!);
@@ -358,16 +341,38 @@ class _GoogleMapsState extends State<GoogleMaps> {
       }
     }
 
-    final updatedMarkers = <String, Marker>{};
-    _markers.forEach((key, marker) {
-      updatedMarkers[key] = marker.copyWith(draggableParam: widget.isModified);
-    });
+    //Add Marker
+    if (oldWidget.addMarker < widget.addMarker) {
+      final center = _savedCenter ?? const LatLng(30.622405, -96.353055);
 
-    setState(() {
-      _markers
-        ..clear()
-        ..addAll(updatedMarkers);
-    });
+      final nextId = (stops.isEmpty)
+          ? 1
+          : (stops.map((s) => s['id'] as int).reduce((a, b) => a > b ? a : b) +
+                1);
+
+      final newStop = {
+        'id': nextId,
+        'pos': {'lat': center.latitude, 'lon': center.longitude},
+      };
+
+      setState(() {
+        stops.add(newStop);
+        buildMarkers(stops, MarkerType.stop);
+      });
+    }
+
+    //Saved button
+    if (!oldWidget.isSaved && widget.isSaved) {
+      final jsonData = StorageService.getBusRouteData();
+      final data = jsonData != null
+          ? Map<String, dynamic>.from(jsonData)
+          : <String, dynamic>{};
+      data['stops'] = stops;
+      data['students'] = students;
+      StorageService.saveBusRouteData(data);
+      buildMarkers(stops, MarkerType.stop);
+      buildMarkers(students, MarkerType.student);
+    }
 
     //TODO:
     //when you are changing the phase type it will need to rebuild off this change
@@ -502,7 +507,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                     '${markerType}_$touchedMarkerId',
                                   );
 
-                                  
                                   buildMarkers(stops, MarkerType.stop);
                                   buildMarkers(students, MarkerType.student);
 
