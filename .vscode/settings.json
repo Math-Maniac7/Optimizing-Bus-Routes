@@ -96,5 +96,6 @@
         "rope": "cpp",
         "slist": "cpp"
     },
-    "cmake.sourceDirectory": "C:/Users/tornw/Optimizing-Bus-Routes/flutter_app/linux"
+    "cmake.sourceDirectory": "C:/Users/tornw/Optimizing-Bus-Routes/flutter_app/linux",
+    "cmake.ignoreCMakeListsMissing": true
 }
