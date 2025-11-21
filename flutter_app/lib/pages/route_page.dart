@@ -191,6 +191,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                   isSaved: _saveMarkers,
                                   cancelModify: _cancelModify,
                                   addMarker: _addMarker,
+                                  isGenerating: _isGeneratingRoutes,
                                   interactionEnabled: !_isDrawerOpen,
                                   phaseType: selectedPhase,
                                 ),
@@ -301,8 +302,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     debugPrint("Generate Routes button pressed");
 
     // Determine which phase to use (default to Phase 1 if not selected)
-    final phase = selectedPhase ?? Phase.phaseOne;
-    final phaseNumber = phase.phase;
+    final phase = selectedPhase ;
+    final phaseNumber = phase?.phase;
 
     if (phaseNumber == 1) {
       await _generatePhase1Routes();

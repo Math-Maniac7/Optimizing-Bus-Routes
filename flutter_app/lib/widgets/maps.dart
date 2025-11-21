@@ -29,18 +29,20 @@ enum MarkerLabel {
 // ignore: must_be_immutable
 class GoogleMaps extends StatefulWidget {
   final bool isModified;
-  bool isSaved;
-  bool cancelModify;
-  int addMarker;
+  final bool isSaved;
+  final bool cancelModify;
+  final int addMarker;
+  final bool isGenerating;
   final bool interactionEnabled;
-  Phase? phaseType;
+  final Phase? phaseType;
 
-  GoogleMaps({
+  const GoogleMaps({
     super.key,
     required this.isModified,
     required this.isSaved,
     required this.cancelModify,
     required this.addMarker,
+    required this.isGenerating,
     this.interactionEnabled = true,
     required this.phaseType,
   });
@@ -75,6 +77,24 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late BitmapDescriptor dragIcon;
   late BitmapDescriptor studentIcon;
   MarkerLabel? selectedMarker = MarkerLabel.stop;
+  final busController = TextEditingController();
+  bool isEditingBus = false;
+
+  late bool isSaved;
+  late bool cancelModify;
+  late int addMarker;
+  late bool isGenerating;
+  late Phase? phaseType;
+
+  @override
+  void initState() {
+    super.initState();
+    isSaved = widget.isSaved;
+    cancelModify = widget.cancelModify;
+    addMarker = widget.addMarker;
+    isGenerating = widget.isGenerating;
+    phaseType = widget.phaseType;
+  }
 
   Future<void> initIcon() async {
     final base = Marker(
@@ -204,7 +224,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   //Creation of markers with their parameters
   void buildMarkers(List<dynamic> markers, MarkerType flag) async {
     final newMarkers = <String, Marker>{};
-    id = 1;
+    id = 0;
     for (final m in markers) {
       m['id'] = id;
       final currentId = m['id'] as int;
@@ -419,12 +439,17 @@ class _GoogleMapsState extends State<GoogleMaps> {
         case null:
           throw UnimplementedError();
         case Phase.phaseOne:
-          buildMarkers(stops, MarkerType.stop);
-          buildMarkers(students, MarkerType.student);
+          if (widget.isGenerating) {
+            buildMarkers(stops, MarkerType.stop);
+            buildMarkers(students, MarkerType.student);
+          }
+
           break;
         case Phase.phaseTwo:
           if (jsonData != null && jsonData['stops'] != null) {
-            buildMarkers(stops, MarkerType.stop);
+            if (widget.isGenerating) {
+              buildMarkers(stops, MarkerType.stop);
+            }
           }
           break;
         case Phase.phaseThree:
@@ -443,6 +468,16 @@ class _GoogleMapsState extends State<GoogleMaps> {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
+    final markerNumber = touchedMarkerId + 1;
+
+    int busAssignment = 0;
+    if (markerInfo) {
+      for (final a in assignments) {
+        if (a['stops'].contains(touchedMarkerId)) {
+          busAssignment = a['bus'] + 1;
+        }
+      }
+    }
     return Stack(
       children: [
         GoogleMap(
@@ -509,7 +544,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                       children: [
                         Center(
                           child: Text(
-                            '$markerType $touchedMarkerId',
+                            '$markerType $markerNumber',
                             style: GoogleFonts.quicksand(
                               fontSize: 25,
                               fontWeight: FontWeight.w600,
@@ -579,17 +614,139 @@ class _GoogleMapsState extends State<GoogleMaps> {
                           ],
                         ),
                         SizedBox(height: screenHeight * 0.02),
-                        // Center(
-                        //   child: Text(
-                        //       if assignments[touchedMarkerId],
-                        //     style: GoogleFonts.quicksand(
-                        //       fontSize: 25,
-                        //       fontWeight: FontWeight.w600,
-                        //       color: const Color.fromARGB(255, 48, 56, 149),
-                        //     ),
-                        //     textAlign: TextAlign.center,
-                        //   ),
-                        // ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (!isEditingBus)
+                              Text(
+                                'Bus $busAssignment',
+                                style: GoogleFonts.quicksand(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color.fromARGB(255, 48, 56, 149),
+                                ),
+                              )
+                            else
+                              Row(
+                                children: [
+                                  Text(
+                                    'Bus',
+                                    style: GoogleFonts.quicksand(
+                                      fontSize: 25,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color.fromARGB(
+                                        255,
+                                        48,
+                                        56,
+                                        149,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: screenWidth * 0.01,
+                                    child: TextField(
+                                      controller: busController,
+                                      style: GoogleFonts.quicksand(
+                                        fontSize: 20,
+                                        color: const Color.fromARGB(
+                                          255,
+                                          48,
+                                          56,
+                                          149,
+                                        ),
+                                      ),
+                                      decoration: const InputDecoration(
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      keyboardType: ,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                        SizedBox(height: screenHeight * 0.02),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (!isEditingBus)
+                              TextButton(
+                                style: ButtonStyle(
+                                  backgroundColor:
+                                      WidgetStatePropertyAll<Color>(
+                                        const Color.fromARGB(
+                                          117,
+                                          255,
+                                          255,
+                                          255,
+                                        ),
+                                      ),
+                                  padding: WidgetStatePropertyAll<EdgeInsets>(
+                                    EdgeInsets.symmetric(
+                                      horizontal: screenWidth * .01,
+                                      vertical: screenHeight * .01,
+                                    ),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    isEditingBus = true;
+                                  });
+                                },
+                                child: Text(
+                                  "Edit",
+                                  style: GoogleFonts.quicksand(
+                                    fontSize: 25,
+                                    color: const Color.fromRGBO(
+                                      57,
+                                      103,
+                                      136,
+                                      1,
+                                    ),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            SizedBox(width: screenWidth * 0.06),
+                            if (isEditingBus)
+                              TextButton(
+                                style: ButtonStyle(
+                                  backgroundColor:
+                                      WidgetStatePropertyAll<Color>(
+                                        const Color.fromARGB(
+                                          117,
+                                          255,
+                                          255,
+                                          255,
+                                        ),
+                                      ),
+                                  padding: WidgetStatePropertyAll<EdgeInsets>(
+                                    EdgeInsets.symmetric(
+                                      horizontal: screenWidth * .01,
+                                      vertical: screenHeight * .01,
+                                    ),
+                                  ),
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    isEditingBus = false;
+                                  });
+                                },
+                                child: Text(
+                                  "Save",
+                                  style: GoogleFonts.quicksand(
+                                    fontSize: 25,
+                                    color: const Color.fromRGBO(
+                                      57,
+                                      103,
+                                      136,
+                                      1,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ],
                     ),
                   ),

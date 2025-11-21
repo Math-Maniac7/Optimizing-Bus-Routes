@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class SignupForm extends StatefulWidget {
+  
   const SignupForm({super.key});
   static const String routeName = '/signup';
 
