@@ -580,11 +580,18 @@ Graph* BRP::create_graph() {
         max_lon = std::max(max_lon, s->pos->lon);
     }
 
-    //add 5 mile buffer
-    min_lat -= 0.07;
-    min_lon -= 0.07;
-    max_lat += 0.07;
-    max_lon += 0.07;
+    // //add 5 mile buffer
+    // min_lat -= 0.07;
+    // min_lon -= 0.07;
+    // max_lat += 0.07;
+    // max_lon += 0.07;
+
+    //add 2 mile buffer
+    ld buf = 2.0 / 70.0;
+    min_lat -= buf;
+    min_lon -= buf;
+    max_lat += buf;
+    max_lon += buf;
 
     this->graph = utils::create_graph(min_lat, min_lon, max_lat, max_lon);
     return this->graph.value();
