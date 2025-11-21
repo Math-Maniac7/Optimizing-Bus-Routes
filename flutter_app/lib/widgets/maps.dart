@@ -62,6 +62,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   Set<Polyline> polylines = {};
   List<dynamic> stops = [];
   List<dynamic> students = [];
+  List<dynamic> assignments = [];
   List<dynamic>? _originalStops;
   List<dynamic>? _originalStudents;
   LatLng? _savedCenter;
@@ -184,6 +185,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
         case Phase.phaseTwo:
           if (jsonData != null && jsonData['stops'] != null) {
             stops = jsonData['stops'];
+            assignments = jsonData['assignments'];
             buildMarkers(stops, MarkerType.stop);
           }
           break;
@@ -202,14 +204,11 @@ class _GoogleMapsState extends State<GoogleMaps> {
   //Creation of markers with their parameters
   void buildMarkers(List<dynamic> markers, MarkerType flag) async {
     final newMarkers = <String, Marker>{};
-    id = 0;
+    id = 1;
     for (final m in markers) {
-      if (!m.containsKey('id')) {
-        id += 1;
-        m['id'] = id;
-      }
+      m['id'] = id;
       final currentId = m['id'] as int;
-      if (currentId > id) id = currentId;
+      id++;
       final key = '${flag.name}_$currentId';
       final lat = m['pos']['lat'] as num;
       final lon = m['pos']['lon'] as num;
@@ -376,6 +375,68 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
     //TODO:
     //when you are changing the phase type it will need to rebuild off this change
+    if (oldWidget.phaseType != widget.phaseType) {
+      final oldPhase = oldWidget.phaseType;
+      final newPhase = widget.phaseType;
+      final jsonData = StorageService.getBusRouteData();
+      final data = jsonData != null
+          ? Map<String, dynamic>.from(jsonData)
+          : <String, dynamic>{};
+      switch (oldPhase) {
+        case null:
+          throw UnimplementedError();
+        case Phase.phaseOne:
+          data['stops'] = stops;
+          data['students'] = students;
+          StorageService.saveBusRouteData(data);
+
+          break;
+        case Phase.phaseTwo:
+          if (jsonData != null && jsonData['stops'] != null) {
+            data['stops'] = stops;
+            data['assignments'] = assignments;
+            StorageService.saveBusRouteData(data);
+          }
+          break;
+        case Phase.phaseThree:
+        // // TODO: Handle this case.
+        // if (jsonData != null && jsonData['stops'] != null) {
+        //   stops = jsonData['stops'];
+        //   buildMarkers(stops, MarkerType.stop);
+        // }
+        // //polyline function
+        // break;
+      }
+
+      final refreshed = StorageService.getBusRouteData();
+      stops = refreshed?['stops'] ?? [];
+      students = refreshed?['students'] ?? [];
+      assignments = refreshed?['assignments'] ?? [];
+
+      _markers.clear();
+
+      switch (newPhase) {
+        case null:
+          throw UnimplementedError();
+        case Phase.phaseOne:
+          buildMarkers(stops, MarkerType.stop);
+          buildMarkers(students, MarkerType.student);
+          break;
+        case Phase.phaseTwo:
+          if (jsonData != null && jsonData['stops'] != null) {
+            buildMarkers(stops, MarkerType.stop);
+          }
+          break;
+        case Phase.phaseThree:
+        // // TODO: Handle this case.
+        // if (jsonData != null && jsonData['stops'] != null) {
+        //   stops = jsonData['stops'];
+        //   buildMarkers(stops, MarkerType.stop);
+        // }
+        // //polyline function
+        // break;
+      }
+    }
   }
 
   @override
@@ -517,6 +578,18 @@ class _GoogleMapsState extends State<GoogleMaps> {
                             ),
                           ],
                         ),
+                        SizedBox(height: screenHeight * 0.02),
+                        // Center(
+                        //   child: Text(
+                        //       if assignments[touchedMarkerId],
+                        //     style: GoogleFonts.quicksand(
+                        //       fontSize: 25,
+                        //       fontWeight: FontWeight.w600,
+                        //       color: const Color.fromARGB(255, 48, 56, 149),
+                        //     ),
+                        //     textAlign: TextAlign.center,
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),
