@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_app/pages/route_page.dart';
 import 'package:flutter_app/services/storage_service.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -544,7 +545,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
                       children: [
                         Center(
                           child: Text(
-                            '$markerType $markerNumber',
+                            (markerType == 'stop')
+                                ? 'Stop $markerNumber'
+                                : 'Student $markerNumber',
                             style: GoogleFonts.quicksand(
                               fontSize: 25,
                               fontWeight: FontWeight.w600,
@@ -643,7 +646,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                     ),
                                   ),
                                   SizedBox(
-                                    width: screenWidth * 0.01,
+                                    width: screenWidth * 0.025,
                                     child: TextField(
                                       controller: busController,
                                       style: GoogleFonts.quicksand(
@@ -659,6 +662,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                         border: OutlineInputBorder(),
                                       ),
                                       keyboardType: TextInputType.number,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -707,7 +713,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                   textAlign: TextAlign.center,
                                 ),
                               ),
-                            SizedBox(width: screenWidth * 0.06),
                             if (isEditingBus)
                               TextButton(
                                 style: ButtonStyle(
@@ -728,8 +733,32 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                   ),
                                 ),
                                 onPressed: () {
+                                  final busNumber =
+                                      int.tryParse(busController.text) ?? 0;
+
+                                  if (busNumber < 1 ||
+                                      busNumber > assignments.length) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Center(
+                                          child: Text(
+                                            'Error: Bus number does not exist',
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  // now update assignments
+                                  for (final a in assignments) {
+                                    if (a['stops'].contains(touchedMarkerId)) {
+                                      a['bus'] = busNumber - 1;
+                                    }
+                                  }
                                   setState(() {
                                     isEditingBus = false;
+                                    busAssignment = busNumber;
                                   });
                                 },
                                 child: Text(

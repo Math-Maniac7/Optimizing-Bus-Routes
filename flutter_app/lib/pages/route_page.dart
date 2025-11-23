@@ -45,6 +45,7 @@ class RouteOptimization extends StatefulWidget {
 class _RouteOptimizationState extends State<RouteOptimization> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Phase? selectedPhase = Phase.phaseOne; // Default to Phase 1
+  Phase? savedPhase = Phase.phaseOne;
   bool _isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
@@ -112,7 +113,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                               SizedBox(height: screenHeight * 0.02),
                               DropdownMenu<Phase>(
                                 width: screenWidth * .15,
-                                initialSelection: Phase.phaseOne,
+                                initialSelection: selectedPhase,
                                 requestFocusOnTap: false,
                                 onSelected: (Phase? p) {
                                   setState(() {
@@ -703,6 +704,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     setState(() {
       _isModified = true;
       _cancelModify = false;
+      savedPhase = selectedPhase;
     });
   }
 
@@ -713,6 +715,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   void _onSave() {
     debugPrint("Save button pressed");
     setState(() {
+      savedPhase = selectedPhase;
+
       _saveMarkers = true;
       _isModified = false;
     });
@@ -722,6 +726,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     debugPrint("Cancel button pressed");
 
     setState(() {
+      selectedPhase = savedPhase;
+
       _cancelModify = true;
       _isModified = false;
       _saveMarkers = false;
