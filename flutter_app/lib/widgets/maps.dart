@@ -658,7 +658,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                       decoration: const InputDecoration(
                                         border: OutlineInputBorder(),
                                       ),
-                                      keyboardType: ,
+                                      keyboardType: TextInputType.number,
                                     ),
                                   ),
                                 ],
