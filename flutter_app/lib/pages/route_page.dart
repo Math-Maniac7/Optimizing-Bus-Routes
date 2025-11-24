@@ -13,9 +13,9 @@ import 'package:collection/collection.dart';
 typedef PhaseType = DropdownMenuEntry<Phase>;
 
 enum Phase {
-  phaseOne('Phase', 1),
-  phaseTwo('Phase', 2),
-  phaseThree('Phase', 3);
+  phaseOne('Create Stops', 1),
+  phaseTwo('Assign Buses', 2),
+  phaseThree('Create Routes', 3);
 
   const Phase(this.label, this.phase);
   final String label;
@@ -25,7 +25,7 @@ enum Phase {
     values.map<PhaseType>(
       (Phase p) => PhaseType(
         value: p,
-        label: '${p.label} ${p.phase}',
+        label: p.label,
         style: MenuItemButton.styleFrom(
           foregroundColor: const Color.fromRGBO(57, 103, 136, 1),
         ),
@@ -45,6 +45,7 @@ class RouteOptimization extends StatefulWidget {
 class _RouteOptimizationState extends State<RouteOptimization> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   Phase? selectedPhase = Phase.phaseOne; // Default to Phase 1
+  Phase? savedPhase = Phase.phaseOne;
   bool _isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
@@ -112,7 +113,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                               SizedBox(height: screenHeight * 0.02),
                               DropdownMenu<Phase>(
                                 width: screenWidth * .15,
-                                initialSelection: Phase.phaseOne,
+                                initialSelection: selectedPhase,
                                 requestFocusOnTap: false,
                                 onSelected: (Phase? p) {
                                   setState(() {
@@ -162,13 +163,19 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                       ),
                                       textAlign: TextAlign.center,
                                     ),
-
-                                    SizedBox(height: screenHeight * 0.02),
-                                    _buildSideButton("Add Marker", screenWidth),
-                                    SizedBox(height: screenHeight * 0.02),
-                                    _buildSideButton("Save", screenWidth),
-                                    SizedBox(height: screenHeight * 0.02),
-                                    _buildSideButton("Cancel", screenWidth),
+                                    if (selectedPhase != Phase.phaseThree) ...[
+                                      SizedBox(height: screenHeight * 0.02),
+                                      _buildSideButton(
+                                        "Add Marker",
+                                        screenWidth,
+                                      ),
+                                      SizedBox(height: screenHeight * 0.02),
+                                      _buildSideButton("Save", screenWidth),
+                                      SizedBox(height: screenHeight * 0.02),
+                                      _buildSideButton("Exit", screenWidth),
+                                    ] else ...[
+                                      _buildSideButton("Exit", screenWidth),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -191,7 +198,9 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                   isSaved: _saveMarkers,
                                   cancelModify: _cancelModify,
                                   addMarker: _addMarker,
+                                  isGenerating: _isGeneratingRoutes,
                                   interactionEnabled: !_isDrawerOpen,
+                                  phaseType: selectedPhase,
                                 ),
                               ),
                             ),
@@ -273,7 +282,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
             _onModify();
           } else if (text == "Save") {
             _onSave();
-          } else if (text == "Cancel") {
+          } else if (text == "Exit") {
             _onCancel();
           } else if (text == "Add Marker") {
             _onAddMarker();
@@ -300,8 +309,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     debugPrint("Generate Routes button pressed");
 
     // Determine which phase to use (default to Phase 1 if not selected)
-    final phase = selectedPhase ?? Phase.phaseOne;
-    final phaseNumber = phase.phase;
+    final phase = selectedPhase;
+    final phaseNumber = phase?.phase;
 
     if (phaseNumber == 1) {
       await _generatePhase1Routes();
@@ -334,7 +343,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
     // Create completer to track completion
     _routeGenerationCompleter = Completer<void>();
-    
+
     // Show spinner first
     setState(() {
       _isGeneratingRoutes = true;
@@ -361,10 +370,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Extract stops from the BRP JSON (stops are already in the correct format)
       final stops = brpResult['stops'] as List<dynamic>?;
       if (stops == null) {
-        _showMessage(
-          'No stops found in phase 1 result.',
-          isError: true,
-        );
+        _showMessage('No stops found in phase 1 result.', isError: true);
         _routeGenerationCompleter?.complete();
         return;
       }
@@ -375,12 +381,12 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // We want to preserve our existing data and add the stops
       final updatedJsonData = Map<String, dynamic>.from(jsonData);
       updatedJsonData['stops'] = stops;
-      
+
       // Also update other fields if they exist in the result (evals, etc.)
       if (brpResult.containsKey('evals')) {
         updatedJsonData['evals'] = brpResult['evals'];
       }
-      
+
       debugPrint('Updated JSON with stops');
 
       // Save the updated JSON back to session storage
@@ -392,26 +398,31 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       });
 
       _showMessage('Routes generated successfully!', isError: false);
-      
+
       // Complete the completer to signal spinner can stop
       _routeGenerationCompleter?.complete();
     } catch (e) {
       debugPrint('Error generating routes: $e');
-      
+
       // Provide user-friendly error messages
       String errorMessage;
-      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
-        errorMessage = 'Route generation timed out. The Overpass API may be experiencing high load. '
+      if (e.toString().contains('TimeoutException') ||
+          e.toString().contains('timed out')) {
+        errorMessage =
+            'Route generation timed out. The Overpass API may be experiencing high load. '
             'Please try again in a few minutes.';
-      } else if (e.toString().contains('Overpass HTTP') || e.toString().contains('504')) {
-        errorMessage = 'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
+      } else if (e.toString().contains('Overpass HTTP') ||
+          e.toString().contains('504')) {
+        errorMessage =
+            'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
             'This is a temporary problem with the external service. Please try again later.';
       } else if (e.toString().contains('WASM Error')) {
-        errorMessage = 'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
+        errorMessage =
+            'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
       } else {
         errorMessage = 'Error generating routes: ${e.toString()}';
       }
-      
+
       _showMessage(errorMessage, isError: true);
       _routeGenerationCompleter?.complete();
     } finally {
@@ -456,7 +467,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
     // Create completer to track completion
     _routeGenerationCompleter = Completer<void>();
-    
+
     // Show spinner first
     setState(() {
       _isGeneratingRoutes = true;
@@ -483,10 +494,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Extract assignments from the BRP JSON (assignments are already in the correct format)
       final assignments = brpResult['assignments'] as List<dynamic>?;
       if (assignments == null) {
-        _showMessage(
-          'No assignments found in phase 2 result.',
-          isError: true,
-        );
+        _showMessage('No assignments found in phase 2 result.', isError: true);
         _routeGenerationCompleter?.complete();
         return;
       }
@@ -495,17 +503,18 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Merge the result with existing JSON data
       final updatedJsonData = Map<String, dynamic>.from(jsonData);
       updatedJsonData['assignments'] = assignments;
-      
+      updatedJsonData['students'] = jsonData['students'];
+
       // Also update other fields if they exist in the result (evals, etc.)
       if (brpResult.containsKey('evals')) {
         updatedJsonData['evals'] = brpResult['evals'];
       }
-      
+
       // Preserve stops if they exist in the result
       if (brpResult.containsKey('stops')) {
         updatedJsonData['stops'] = brpResult['stops'];
       }
-      
+
       debugPrint('Updated JSON with assignments');
 
       // Save the updated JSON back to session storage
@@ -517,26 +526,31 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       });
 
       _showMessage('Routes generated successfully!', isError: false);
-      
+
       // Complete the completer to signal spinner can stop
       _routeGenerationCompleter?.complete();
     } catch (e) {
       debugPrint('Error generating routes: $e');
-      
+
       // Provide user-friendly error messages
       String errorMessage;
-      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
-        errorMessage = 'Route generation timed out. The Overpass API may be experiencing high load. '
+      if (e.toString().contains('TimeoutException') ||
+          e.toString().contains('timed out')) {
+        errorMessage =
+            'Route generation timed out. The Overpass API may be experiencing high load. '
             'Please try again in a few minutes.';
-      } else if (e.toString().contains('Overpass HTTP') || e.toString().contains('504')) {
-        errorMessage = 'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
+      } else if (e.toString().contains('Overpass HTTP') ||
+          e.toString().contains('504')) {
+        errorMessage =
+            'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
             'This is a temporary problem with the external service. Please try again later.';
       } else if (e.toString().contains('WASM Error')) {
-        errorMessage = 'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
+        errorMessage =
+            'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
       } else {
         errorMessage = 'Error generating routes: ${e.toString()}';
       }
-      
+
       _showMessage(errorMessage, isError: true);
       _routeGenerationCompleter?.complete();
     } finally {
@@ -590,7 +604,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
     // Create completer to track completion
     _routeGenerationCompleter = Completer<void>();
-    
+
     // Show spinner first
     setState(() {
       _isGeneratingRoutes = true;
@@ -617,10 +631,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Extract routes from the BRP JSON (routes are already in the correct format)
       final routes = brpResult['routes'] as List<dynamic>?;
       if (routes == null) {
-        _showMessage(
-          'No routes found in phase 3 result.',
-          isError: true,
-        );
+        _showMessage('No routes found in phase 3 result.', isError: true);
         _routeGenerationCompleter?.complete();
         return;
       }
@@ -629,12 +640,13 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Merge the result with existing JSON data
       final updatedJsonData = Map<String, dynamic>.from(jsonData);
       updatedJsonData['routes'] = routes;
-      
+      updatedJsonData['students'] = jsonData['students'];
+
       // Also update other fields if they exist in the result (evals, etc.)
       if (brpResult.containsKey('evals')) {
         updatedJsonData['evals'] = brpResult['evals'];
       }
-      
+
       // Preserve stops and assignments if they exist in the result
       if (brpResult.containsKey('stops')) {
         updatedJsonData['stops'] = brpResult['stops'];
@@ -642,7 +654,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       if (brpResult.containsKey('assignments')) {
         updatedJsonData['assignments'] = brpResult['assignments'];
       }
-      
+
       debugPrint('Updated JSON with routes');
 
       // Save the updated JSON back to session storage
@@ -654,26 +666,31 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       });
 
       _showMessage('Routes generated successfully!', isError: false);
-      
+
       // Complete the completer to signal spinner can stop
       _routeGenerationCompleter?.complete();
     } catch (e) {
       debugPrint('Error generating routes: $e');
-      
+
       // Provide user-friendly error messages
       String errorMessage;
-      if (e.toString().contains('TimeoutException') || e.toString().contains('timed out')) {
-        errorMessage = 'Route generation timed out. The Overpass API may be experiencing high load. '
+      if (e.toString().contains('TimeoutException') ||
+          e.toString().contains('timed out')) {
+        errorMessage =
+            'Route generation timed out. The Overpass API may be experiencing high load. '
             'Please try again in a few minutes.';
-      } else if (e.toString().contains('Overpass HTTP') || e.toString().contains('504')) {
-        errorMessage = 'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
+      } else if (e.toString().contains('Overpass HTTP') ||
+          e.toString().contains('504')) {
+        errorMessage =
+            'The Overpass API (OpenStreetMap) is currently unavailable or experiencing issues. '
             'This is a temporary problem with the external service. Please try again later.';
       } else if (e.toString().contains('WASM Error')) {
-        errorMessage = 'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
+        errorMessage =
+            'An error occurred during route generation: ${e.toString().replaceFirst('Exception: WASM Error: ', '')}';
       } else {
         errorMessage = 'Error generating routes: ${e.toString()}';
       }
-      
+
       _showMessage(errorMessage, isError: true);
       _routeGenerationCompleter?.complete();
     } finally {
@@ -701,6 +718,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     setState(() {
       _isModified = true;
       _cancelModify = false;
+      savedPhase = selectedPhase;
     });
   }
 
@@ -711,6 +729,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   void _onSave() {
     debugPrint("Save button pressed");
     setState(() {
+      savedPhase = selectedPhase;
+
       _saveMarkers = true;
       _isModified = false;
     });
@@ -720,6 +740,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     debugPrint("Cancel button pressed");
 
     setState(() {
+      selectedPhase = savedPhase;
+
       _cancelModify = true;
       _isModified = false;
       _saveMarkers = false;
@@ -733,16 +755,15 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 class _IndependentLoadingOverlay extends StatefulWidget {
   final Completer<void>? completer;
 
-  const _IndependentLoadingOverlay({
-    required this.completer,
-  });
+  const _IndependentLoadingOverlay({required this.completer});
 
   @override
   State<_IndependentLoadingOverlay> createState() =>
       _IndependentLoadingOverlayState();
 }
 
-class _IndependentLoadingOverlayState extends State<_IndependentLoadingOverlay> {
+class _IndependentLoadingOverlayState
+    extends State<_IndependentLoadingOverlay> {
   static int _spinnerCounter = 0;
   late String _spinnerId;
   bool _isComplete = false;
@@ -770,7 +791,8 @@ class _IndependentLoadingOverlayState extends State<_IndependentLoadingOverlay> 
     // Inject CSS for the spinner animation
     final style = html.StyleElement()
       ..id = '${_spinnerId}_style'
-      ..text = '''
+      ..text =
+          '''
         @keyframes ${_spinnerId}_spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
@@ -789,16 +811,13 @@ class _IndependentLoadingOverlayState extends State<_IndependentLoadingOverlay> 
 
   void _registerPlatformView() {
     if (!_isRegistered) {
-      ui_web.platformViewRegistry.registerViewFactory(
-        _spinnerId,
-        (int viewId) {
-          final div = html.DivElement()
-            ..id = _spinnerId
-            ..style.width = '50px'
-            ..style.height = '50px';
-          return div;
-        },
-      );
+      ui_web.platformViewRegistry.registerViewFactory(_spinnerId, (int viewId) {
+        final div = html.DivElement()
+          ..id = _spinnerId
+          ..style.width = '50px'
+          ..style.height = '50px';
+        return div;
+      });
       _isRegistered = true;
     }
   }
