@@ -407,9 +407,50 @@ static StopCandidate run_simulated_annealing(
     return c;
 }
 
+static bool branch_reaches_intersection(Graph* g, node_t start, node_t next){
+    if(!g || next < 0 || next >= (node_t)g->nodes.size()) return false;
+    std::queue<node_t> q;
+    std::vector<char> vis(g->nodes.size(), 0);
+    vis[start] = 1;
+    vis[next] = 1;
+    q.push(next);
+    while(!q.empty()){
+        node_t u = q.front(); q.pop();
+        int deg = drive_deg(g,u);
+        if(deg >= 3){
+            return true;
+        }
+        for(auto e : g->adj[u]){
+            if(!e->is_driveable) continue;
+            node_t v = e->v;
+            if(vis[v]) continue;
+            vis[v] = 1;
+            q.push(v);
+        }
+    }
+    return false;
+}
+
+static bool has_intersections_both_sides(Graph* g, node_t start, ld /*limit*/){
+    if(!g) return false;
+    int deg = drive_deg(g,start);
+    if(deg < 2) return false;
+    int found = 0;
+    for(auto e : g->adj[start]){
+        if(!e->is_driveable) continue;
+        if(branch_reaches_intersection(g, start, e->v)){
+            if(++found >= 2) return true;
+        }
+    }
+    return false;
+}
+
 static node_t escape_culdesac(Graph* g, node_t start, ld max_step){
     int start_deg = drive_deg(g,start);
     if(start_deg >= 3) return start;
+    if(start_deg >= 2 && has_intersections_both_sides(g, start, max_step)){
+        return start;
+    }
     std::queue<std::pair<node_t, ld>> q;
     std::vector<char> vis(g->nodes.size(), 0);
     q.push({start, 0});
@@ -478,7 +519,8 @@ static StopCandidate build_cand(const vector<int>&M,const vector<node_t>&W,const
         c.drive=eval.drive;
         c.cover=eval.cover;
     }
-    node_t adjusted = escape_culdesac(g, c.drive, std::min<ld>(80.0, wp.max * 0.5));
+    ld escape_limit = std::max<ld>(120.0L, std::min<ld>(200.0L, wp.max * 0.75L));
+    node_t adjusted = escape_culdesac(g, c.drive, escape_limit);
     if(adjusted != c.drive){
         SABest eval = evaluate_state(adjusted, M, W, g, S, wp);
         if(eval.valid){
@@ -692,7 +734,10 @@ static void merge_close_stops(
                 node_t nj = sd[j];
                 if(nj < 0) continue;
                 ld d = g->get_dist(ni, nj, false);
-                if(!std::isfinite(d) || d > limit) continue;
+                if(!std::isfinite(d)) continue;
+                bool few = (st[i]->students.size() <= 2 && st[j]->students.size() <= 2);
+                ld relaxed = std::max<ld>(limit * 1.75L, 160.0L);
+                if(d > limit && !(few && d <= relaxed)) continue;
                 st[i]->students.insert(
                     st[i]->students.end(),
                     st[j]->students.begin(),
@@ -923,7 +968,11 @@ static void merge_culdesac_stops(
     ld max_walk
 ) {
     if(!g || st.size() < 2) return;
-    const ld base_limit = std::min<ld>(std::max<ld>(max_walk * 0.5L, 90.0L), max_walk * 0.9L);
+    const ld base_limit = std::max<ld>(
+        130.0L,
+        std::min<ld>(std::max<ld>(max_walk * 0.65L, 90.0L), max_walk * 0.95L)
+    );
+    const ld relaxed_limit = base_limit * 1.35L;
     bool changed = true;
     while(changed) {
         changed = false;
@@ -933,8 +982,70 @@ static void merge_culdesac_stops(
             if(walk_i < 0 || drive_i < 0) continue;
             int deg_i = drive_deg(g, drive_i);
             if(deg_i > 2) continue;
+            auto find_candidate = [&](ld limit)->std::pair<size_t, ld>{
+                DistMap dist;
+                dijkstra_cut(g, walk_i, limit, true, dist);
+                size_t best_j = std::numeric_limits<size_t>::max();
+                ld best_d = std::numeric_limits<ld>::max();
+                int best_deg = -1;
+                for(size_t j = 0; j < st.size(); ++j) {
+                    if(i == j) continue;
+                    node_t walk_j = valid_node(g, sw[j], true);
+                    auto it = dist.find(walk_j);
+                    if(it == dist.end()) continue;
+                    ld d = it->second;
+                    if(d > limit) continue;
+                    node_t drive_j = valid_node(g, sd[j], false);
+                    int deg_j = drive_deg(g, drive_j);
+                    if(deg_j <= 1 && deg_i <= 1) continue;
+                    if(deg_j < deg_i && d > limit * 0.7L) continue;
+                    if(d < best_d - 1e-6 || (std::abs(d - best_d) < 1e-6 && deg_j > best_deg)) {
+                        best_d = d;
+                        best_j = j;
+                        best_deg = deg_j;
+                    }
+                }
+                return {best_j, best_d};
+            };
+            auto [best_j, best_d] = find_candidate(base_limit);
+            if(best_j == std::numeric_limits<size_t>::max() && st[i]->students.size() <= 2) {
+                std::tie(best_j, best_d) = find_candidate(relaxed_limit);
+            }
+            if(best_j != std::numeric_limits<size_t>::max()) {
+                st[best_j]->students.insert(
+                    st[best_j]->students.end(),
+                    st[i]->students.begin(),
+                    st[i]->students.end()
+                );
+                delete st[i]->pos;
+                delete st[i];
+                st.erase(st.begin() + i);
+                sw.erase(sw.begin() + i);
+                sd.erase(sd.begin() + i);
+                changed = true;
+            }
+        }
+    }
+}
+
+static void merge_singleton_stops(
+    Graph* g,
+    vector<BusStop*>& st,
+    vector<node_t>& sw,
+    vector<node_t>& sd,
+    ld max_walk
+) {
+    if(!g || st.size() < 2) return;
+    const ld limit = std::max<ld>(max_walk * 0.9L, std::min<ld>(max_walk, 260.0L));
+    bool merged = true;
+    while(merged) {
+        merged = false;
+        for(size_t i = 0; i < st.size() && !merged; ++i) {
+            if(st[i]->students.size() > 2) continue;
+            node_t walk_i = valid_node(g, sw[i], true);
+            if(walk_i < 0) continue;
             DistMap dist;
-            dijkstra_cut(g, walk_i, base_limit, true, dist);
+            dijkstra_cut(g, walk_i, limit, true, dist);
             size_t best_j = std::numeric_limits<size_t>::max();
             ld best_d = std::numeric_limits<ld>::max();
             for(size_t j = 0; j < st.size(); ++j) {
@@ -943,10 +1054,10 @@ static void merge_culdesac_stops(
                 auto it = dist.find(walk_j);
                 if(it == dist.end()) continue;
                 ld d = it->second;
-                if(d > base_limit) continue;
+                if(d > limit) continue;
+                bool prefer = (st[j]->students.size() > 2);
                 int deg_j = drive_deg(g, valid_node(g, sd[j], false));
-                if(deg_j <= 1 && deg_i <= 1) continue;
-                if(deg_j < deg_i && d > base_limit * 0.6L) continue;
+                if(!prefer && deg_j <= 1) continue;
                 if(d < best_d) {
                     best_d = d;
                     best_j = j;
@@ -963,7 +1074,7 @@ static void merge_culdesac_stops(
                 st.erase(st.begin() + i);
                 sw.erase(sw.begin() + i);
                 sd.erase(sd.begin() + i);
-                changed = true;
+                merged = true;
             }
         }
     }
@@ -996,6 +1107,7 @@ vector<BusStop*> run(const vector<Student*>&S,Graph*g,const Params&Pin){
     consolidate_global(st,sw,sd,S,W,D,g,wp,P);
     merge_close_stops(g, st, sw, sd, std::min<ld>(wp.max * 0.35L, 75.0L));
     merge_culdesac_stops(g, st, sw, sd, wp.max);
+    merge_singleton_stops(g, st, sw, sd, wp.max);
     reassign_students(st,sw,sd,S,W,D,g,wp,P);
     return st;
 }
