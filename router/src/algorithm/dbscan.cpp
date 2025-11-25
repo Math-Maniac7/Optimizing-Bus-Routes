@@ -7,12 +7,19 @@
 #include <unordered_set>
 #include <limits>
 #include <numeric>
+#include <random>
 
 namespace dbscan {
 
 using std::vector;
 using node_t = int;
 using DistMap = std::unordered_map<node_t, ld>;
+
+struct WalkParams {
+    ld max;
+    ld assign;
+    ld move;
+};
 
 static void dijkstra_cut(Graph* g, node_t start, ld cut, bool walk, DistMap& out) {
     out.clear(); if (start < 0 || start >= (node_t)g->nodes.size()) return;
@@ -40,12 +47,29 @@ static int drive_deg(Graph* g,node_t n){int d=0;for(auto e:g->adj[n])if(e->is_dr
 static node_t walk_node_safe(Graph* g,const vector<node_t>&w,int i,const vector<Student*>&S){
     node_t n=w[i]; return (n>=0&&(size_t)n<g->nodes.size())?n:g->get_node(S[i]->pos,true);
 }
-static vector<int> region_query(int i,const vector<node_t>&w,Graph*g,ld r,const vector<Student*>&S){
+static const ld INFVAL = std::numeric_limits<ld>::infinity();
+static vector<int> region_query(
+    int i,
+    const vector<node_t>& w,
+    Graph* g,
+    ld r,
+    const vector<Student*>& S,
+    std::vector<std::vector<int>>* cache = nullptr,
+    std::vector<char>* ready = nullptr
+) {
+    if(cache && ready && i >= 0 && i < (int)ready->size() && (*ready)[i]) {
+        return (*cache)[i];
+    }
     DistMap dist; dijkstra_cut(g,walk_node_safe(g,w,i,S),r,true,dist);
     vector<int>N; for(int j=0;j<(int)w.size();++j){ if(j==i)continue;
         node_t v=walk_node_safe(g,w,j,S);auto it=dist.find(v);
         if(it!=dist.end()&&it->second<=r+1e-6)N.push_back(j);
-    }return N;
+    }
+    if(cache && ready && i >= 0 && i < (int)ready->size()) {
+        (*cache)[i] = N;
+        (*ready)[i] = true;
+    }
+    return N;
 }
 static int medoid(const vector<int>&M,const vector<node_t>&W,Graph*g,
     const vector<Student*>&S,ld max_walk){
@@ -65,13 +89,15 @@ static vector<vector<int>> make_clusters(const vector<Student*>&S,Graph*g,
         D[i]=g->get_node(S[i]->pos,false); idmap[S[i]->id]=i;}
     ld r=(P.seed_radius>0?P.seed_radius:P.max_walk_dist);
     vector<int>lab(N,-1); int cid=0;
+    std::vector<std::vector<int>> neigh_cache(N);
+    std::vector<char> neigh_ready(N, false);
     for(int i=0;i<N;++i){ if(lab[i]!=-1)continue;
-        auto n=region_query(i,W,g,r,S);
+        auto n=region_query(i,W,g,r,S,&neigh_cache,&neigh_ready);
         if((int)n.size()+1<P.min_pts){lab[i]=-2;continue;}
         lab[i]=cid; std::queue<int>q; for(int v:n)q.push(v);
         while(!q.empty()){int j=q.front();q.pop();
             if(lab[j]==-2)lab[j]=cid; if(lab[j]!=-1)continue;
-            lab[j]=cid; auto n2=region_query(j,W,g,r,S);
+            lab[j]=cid; auto n2=region_query(j,W,g,r,S,&neigh_cache,&neigh_ready);
             if((int)n2.size()+1>=P.min_pts)for(int v:n2)if(lab[v]==-1)q.push(v);
         }++cid;
     }
@@ -79,7 +105,157 @@ static vector<vector<int>> make_clusters(const vector<Student*>&S,Graph*g,
     return C;
 }
 
-struct WalkParams{ld max,assign,move;};
+static bool compute_distance_matrix(const vector<int>& cluster,
+    const vector<node_t>&W,Graph*g,const vector<Student*>&S,
+    const WalkParams&wp, vector<vector<ld>>& dist_out) {
+    int n = cluster.size();
+    dist_out.assign(n, vector<ld>(n, INFVAL));
+    bool ok = false;
+    for(int ii = 0; ii < n; ++ii) {
+        node_t start = walk_node_safe(g, W, cluster[ii], S);
+        DistMap dists;
+        dijkstra_cut(g, start, wp.max * 3.0, true, dists);
+        for(int jj = 0; jj < n; ++jj) {
+            node_t target = walk_node_safe(g, W, cluster[jj], S);
+            auto it = dists.find(target);
+            if(it != dists.end()) {
+                dist_out[ii][jj] = it->second;
+                ok = true;
+            }
+        }
+    }
+    return ok;
+}
+
+static vector<int> init_medoids(const vector<vector<ld>>& dist, int k) {
+    int n = dist.size();
+    vector<int> medoids;
+    vector<ld> total(n, 0);
+    for(int i = 0; i < n; ++i) {
+        ld sum = 0;
+        for(int j = 0; j < n; ++j) {
+            ld d = dist[i][j];
+            if(std::isinf(d)) d = 1e9;
+            sum += d;
+        }
+        total[i] = sum;
+    }
+    int first = std::min_element(total.begin(), total.end()) - total.begin();
+    medoids.push_back(first);
+    vector<ld> minDist(n, INFVAL);
+    for(int t = 1; t < k; ++t) {
+        int next_idx = -1;
+        ld best = -1;
+        for(int i = 0; i < n; ++i) {
+            ld d = INFVAL;
+            for(int m : medoids) {
+                d = std::min(d, dist[i][m]);
+            }
+            if(d > best) {
+                best = d;
+                next_idx = i;
+            }
+        }
+        if(next_idx == -1) break;
+        medoids.push_back(next_idx);
+    }
+    while((int)medoids.size() < k) {
+        medoids.push_back(medoids.back());
+    }
+    return medoids;
+}
+
+static vector<vector<int>> split_cluster_kmedoids(
+    const vector<int>& cluster,
+    const vector<node_t>& W,
+    Graph* g,
+    const vector<Student*>& S,
+    const WalkParams& wp,
+    const Params& P
+) {
+    vector<vector<int>> groups;
+    if(cluster.empty()) return groups;
+    int max_group = (P.cap > 0) ? P.cap : (int)cluster.size();
+    if((int)cluster.size() <= max_group) {
+        groups.push_back(cluster);
+        return groups;
+    }
+    int k = (max_group <= 0) ? 1 : ((cluster.size() + max_group - 1) / max_group);
+    if(P.target_stop_count > 0) {
+        k = std::min(k, P.target_stop_count);
+    }
+    vector<vector<ld>> dist;
+    if(!compute_distance_matrix(cluster, W, g, S, wp, dist)) {
+        // fallback to simple slicing
+        for(size_t i = 0; i < cluster.size(); i += max_group) {
+            vector<int> chunk;
+            for(size_t j = i; j < cluster.size() && (int)(j - i) < max_group; ++j) {
+                chunk.push_back(cluster[j]);
+            }
+            groups.push_back(std::move(chunk));
+        }
+        return groups;
+    }
+    vector<int> medoids = init_medoids(dist, std::max(1, k));
+    vector<int> assignment(cluster.size(), -1);
+    for(int iter = 0; iter < 6; ++iter) {
+        bool changed = false;
+        // assign
+        for(size_t i = 0; i < cluster.size(); ++i) {
+            ld best = INFVAL;
+            int best_m = -1;
+            for(int m_idx = 0; m_idx < (int)medoids.size(); ++m_idx) {
+                ld d = dist[i][medoids[m_idx]];
+                if(d < best) {
+                    best = d;
+                    best_m = m_idx;
+                }
+            }
+            if(assignment[i] != best_m) {
+                assignment[i] = best_m;
+                changed = true;
+            }
+        }
+        // update medoids
+        for(int m_idx = 0; m_idx < (int)medoids.size(); ++m_idx) {
+            ld best_cost = INFVAL;
+            int best_idx = medoids[m_idx];
+            for(size_t i = 0; i < cluster.size(); ++i) {
+                if(assignment[i] != m_idx) continue;
+                ld cost = 0;
+                for(size_t j = 0; j < cluster.size(); ++j) {
+                    if(assignment[j] != m_idx) continue;
+                    ld d = dist[i][j];
+                    if(std::isinf(d)) d = 1e9;
+                    cost += d;
+                }
+                if(cost < best_cost) {
+                    best_cost = cost;
+                    best_idx = i;
+                }
+            }
+            if(best_idx != medoids[m_idx]) {
+                medoids[m_idx] = best_idx;
+                changed = true;
+            }
+        }
+        if(!changed) break;
+    }
+    groups.resize(medoids.size());
+    for(size_t i = 0; i < cluster.size(); ++i) {
+        int a = assignment[i];
+        if(a < 0) a = 0;
+        if(a >= (int)groups.size()) groups.resize(a + 1);
+        groups[a].push_back(cluster[i]);
+    }
+    // remove empty groups
+    vector<vector<int>> filtered;
+    for(auto& gset : groups) {
+        if(!gset.empty()) filtered.push_back(std::move(gset));
+    }
+    return filtered;
+}
+
 struct StopCandidate{Coordinate*coord;vector<int>cover;node_t walk,drive;};
 static vector<node_t> gather_drive(Graph*g,node_t s,ld lim,size_t cap){
     DistMap best;struct Q{ld d;node_t u;};auto cmp=[](auto a,auto b){return a.d>b.d;};
@@ -95,36 +271,224 @@ static vector<node_t> gather_drive(Graph*g,node_t s,ld lim,size_t cap){
         }}
     if(out.empty())out.push_back(s);return out;
 }
+struct SABest {
+    bool valid=false;
+    node_t drive=-1;
+    node_t walk=-1;
+    std::vector<int> cover;
+    ld score=0;
+};
+
+struct CandidateCache {
+    node_t drive=-1;
+    node_t walk=-1;
+    std::vector<ld> dists;
+};
+
+static CandidateCache build_candidate_cache(
+    node_t drive,
+    const vector<int>& members,
+    const vector<node_t>& W,
+    Graph* g,
+    const vector<Student*>& S,
+    const WalkParams& wp
+) {
+    CandidateCache cache;
+    cache.drive = drive;
+    cache.walk = valid_node(g, drive, true);
+    cache.dists.assign(members.size(), INFVAL);
+    if(cache.walk < 0) return cache;
+    DistMap dist;
+    dijkstra_cut(g, cache.walk, wp.max, true, dist);
+    for(size_t idx = 0; idx < members.size(); ++idx) {
+        node_t sn = walk_node_safe(g, W, members[idx], S);
+        auto it = dist.find(sn);
+        if(it != dist.end()) {
+            cache.dists[idx] = it->second;
+        }
+    }
+    return cache;
+}
+
+static SABest evaluate_state_cached(
+    const CandidateCache& cache,
+    const vector<int>& members,
+    Graph* g,
+    const WalkParams& wp
+) {
+    SABest res;
+    if(cache.walk < 0 || cache.dists.size() != members.size()) return res;
+    std::vector<int> cover;
+    cover.reserve(members.size());
+    ld total = 0;
+    ld worst = 0;
+    for(size_t i = 0; i < members.size(); ++i) {
+        ld d = cache.dists[i];
+        if(!std::isfinite(d) || d > wp.max + 1e-6) return res;
+        total += d;
+        worst = std::max(worst, d);
+        cover.push_back(members[i]);
+    }
+    ld pen = (drive_deg(g, cache.drive) <= 2 ? (4 - drive_deg(g, cache.drive)) * 0.4L : 0);
+    res.valid = true;
+    res.drive = cache.drive;
+    res.walk = cache.walk;
+    res.cover = std::move(cover);
+    res.score = total + 0.35L * worst + pen;
+    return res;
+}
+
+static SABest evaluate_state(
+    node_t drive,
+    const vector<int>& members,
+    const vector<node_t>& W,
+    Graph* g,
+    const vector<Student*>& S,
+    const WalkParams& wp
+) {
+    CandidateCache cache = build_candidate_cache(drive, members, W, g, S, wp);
+    return evaluate_state_cached(cache, members, g, wp);
+}
+
+static StopCandidate run_simulated_annealing(
+    const vector<int>& members,
+    const vector<CandidateCache>& caches,
+    Graph* g,
+    const WalkParams& wp
+) {
+    StopCandidate c{};
+    if(caches.empty() || members.empty()) return c;
+    std::mt19937 rng(std::random_device{}());
+    auto eval_idx = [&](int idx) { return evaluate_state_cached(caches[idx], members, g, wp); };
+
+    SABest current;
+    int current_idx = -1;
+    for(size_t i = 0; i < caches.size(); ++i) {
+        current = eval_idx(static_cast<int>(i));
+        if(current.valid) {
+            current_idx = static_cast<int>(i);
+            break;
+        }
+    }
+    if(!current.valid) return c;
+    SABest best = current;
+    int best_idx = current_idx;
+    std::uniform_real_distribution<double> prob(0.0, 1.0);
+    const double maxTemp = std::max<double>(15.0, wp.max * 0.15);
+    double temp = maxTemp;
+    const double finalTemp = 1.0;
+    const double cooling = 0.94;
+    const int maxIter = 160;
+    std::uniform_int_distribution<int> pick(0, static_cast<int>(caches.size() - 1));
+
+    for(int iter = 0; iter < maxIter && temp > finalTemp; ++iter) {
+        int next_idx = pick(rng);
+        SABest candidate = eval_idx(next_idx);
+        if(!candidate.valid) {
+            temp *= cooling;
+            continue;
+        }
+        ld delta = candidate.score - current.score;
+        if(delta < 0 || std::exp(-delta / temp) > prob(rng)) {
+            current = candidate;
+            current_idx = next_idx;
+        }
+        if(current.score < best.score) {
+            best = current;
+            best_idx = current_idx;
+        }
+        temp *= cooling;
+    }
+
+    c.coord = g->nodes[best.drive]->coord->make_copy();
+    c.walk = best.walk;
+    c.drive = best.drive;
+    c.cover = best.cover;
+    return c;
+}
+
+static node_t escape_culdesac(Graph* g, node_t start, ld max_step){
+    int start_deg = drive_deg(g,start);
+    if(start_deg >= 3) return start;
+    std::queue<std::pair<node_t, ld>> q;
+    std::vector<char> vis(g->nodes.size(), 0);
+    q.push({start, 0});
+    vis[start] = 1;
+    node_t best = start;
+    int best_deg = start_deg;
+    while(!q.empty()){
+        auto [u, dist] = q.front(); q.pop();
+        int deg = drive_deg(g,u);
+        if(u != start && deg >= 3){
+            return u;
+        }
+        if(deg > best_deg){
+            best = u;
+            best_deg = deg;
+        }
+        for(auto e : g->adj[u]){
+            if(!e->is_driveable) continue;
+            ld nd = dist + e->dist;
+            if(nd > max_step) continue;
+            if(vis[e->v]) continue;
+            vis[e->v] = 1;
+            q.push({e->v, nd});
+        }
+    }
+    return best;
+}
+
 static StopCandidate build_cand(const vector<int>&M,const vector<node_t>&W,const vector<node_t>&D,
     const vector<Student*>&S,Graph*g,const WalkParams&wp){
     StopCandidate c{}; if(M.empty())return c;
     int med=medoid(M,W,g,S,wp.max);
     std::unordered_set<node_t>seen;vector<node_t>C;
-    auto add=[&](int i,size_t k){for(node_t n:gather_drive(g,D[i],wp.move,k))
-        if(seen.insert(n).second){C.push_back(n);if(C.size()>=64)break;}};
-    add(med,8);for(int i:M)if(C.size()<64&&i!=med)add(i,4);
-    if(C.empty())C.push_back(D[med]);
-    ld best=std::numeric_limits<ld>::max();node_t bd=-1,bw=-1;
-    for(node_t d:C){node_t mw=walk_node_safe(g,W,med,S);
-        node_t w=valid_node(g,d,true);
-        DistMap dist; dijkstra_cut(g,w,wp.max,true,dist);
-        bool ok=true;ld tot=0,worst=0;
-        for(int i:M){node_t si=walk_node_safe(g,W,i,S);
-            auto it=dist.find(si);
-            if(it==dist.end()||it->second>wp.max+1e-6){ok=false;break;}
-            tot+=it->second;worst=std::max(worst,it->second);}
-        if(!ok)continue;
-        ld pen=(drive_deg(g,d)<=2?(4-drive_deg(g,d))*0.5L*wp.max:0);
-        ld score=tot+0.25L*worst+pen;
-        if(score<best){best=score;bd=d;bw=w;}
+    const size_t global_cap = 48;
+    auto add=[&](int i,size_t k){
+        if(i<0) return;
+        for(node_t n:gather_drive(g,D[i],wp.move,k)){
+            if(seen.insert(n).second){
+                C.push_back(n);
+                if(C.size()>=global_cap)break;
+            }
+        }
+    };
+    add(med,6);
+    for(int i:M){
+        if(C.size()>=global_cap) break;
+        if(i!=med) add(i,3);
     }
-    if(bd==-1){bd=D[med];bw=valid_node(g,bd,true);}
-    c.coord=g->nodes[bd]->coord->make_copy();c.walk=bw;c.drive=bd;
-    DistMap dist; dijkstra_cut(g,c.walk,wp.max,true,dist);
-    for(int i:M){node_t si=walk_node_safe(g,W,i,S);
-        auto it=dist.find(si);
-        if(it!=dist.end()&&it->second<=wp.max+1e-6)c.cover.push_back(i);}
-    if(c.cover.empty())c.cover.push_back(med);
+    if(C.empty())C.push_back(D[med]);
+    std::vector<CandidateCache> caches;
+    caches.reserve(C.size());
+    for(node_t drive_node : C){
+        caches.push_back(build_candidate_cache(drive_node, M, W, g, S, wp));
+    }
+    c=run_simulated_annealing(M,caches,g,wp);
+    if(!c.coord){
+        node_t fallback=D[med];
+        SABest eval=evaluate_state(fallback,M,W,g,S,wp);
+        if(!eval.valid){
+            eval.drive=fallback;
+            eval.walk=valid_node(g,fallback,true);
+            eval.cover={med};
+        }
+        c.coord=g->nodes[eval.drive]->coord->make_copy();
+        c.walk=eval.walk;
+        c.drive=eval.drive;
+        c.cover=eval.cover;
+    }
+    node_t adjusted = escape_culdesac(g, c.drive, std::min<ld>(80.0, wp.max * 0.5));
+    if(adjusted != c.drive){
+        SABest eval = evaluate_state(adjusted, M, W, g, S, wp);
+        if(eval.valid){
+            delete c.coord;
+            c.coord = g->nodes[adjusted]->coord->make_copy();
+            c.drive = adjusted;
+            c.walk = eval.walk;
+            c.cover = eval.cover;
+        }
+    }
     return c;
 }
 
@@ -310,6 +674,42 @@ static void refine(vector<BusStop*>&st,vector<node_t>&sw,vector<node_t>&sd,
     dedup(st,sw,sd);
 }
 
+static void merge_close_stops(
+    Graph* g,
+    vector<BusStop*>& st,
+    vector<node_t>& sw,
+    vector<node_t>& sd,
+    ld limit
+) {
+    if(!g || st.empty() || limit <= 0) return;
+    bool merged = true;
+    while(merged) {
+        merged = false;
+        for(size_t i = 0; i < st.size() && !merged; ++i) {
+            node_t ni = sd[i];
+            if(ni < 0) continue;
+            for(size_t j = i + 1; j < st.size(); ++j) {
+                node_t nj = sd[j];
+                if(nj < 0) continue;
+                ld d = g->get_dist(ni, nj, false);
+                if(!std::isfinite(d) || d > limit) continue;
+                st[i]->students.insert(
+                    st[i]->students.end(),
+                    st[j]->students.begin(),
+                    st[j]->students.end()
+                );
+                delete st[j]->pos;
+                delete st[j];
+                st.erase(st.begin() + j);
+                sw.erase(sw.begin() + j);
+                sd.erase(sd.begin() + j);
+                merged = true;
+                break;
+            }
+        }
+    }
+}
+
 static std::vector<std::vector<int>> plan_global_groups(
     const vector<node_t>&W,
     Graph*g,
@@ -431,6 +831,144 @@ static void consolidate_global(vector<BusStop*>&st,vector<node_t>&sw,vector<node
     dedup(st,sw,sd);
 }
 
+static void reassign_students(
+    vector<BusStop*>& st,
+    vector<node_t>& sw,
+    vector<node_t>& sd,
+    const vector<Student*>& S,
+    const vector<node_t>& W,
+    const vector<node_t>& D,
+    Graph* g,
+    const WalkParams& wp,
+    const Params& P
+) {
+    if(st.empty() || S.empty()) return;
+    const ld INF = std::numeric_limits<ld>::infinity();
+    size_t stop_cnt = st.size();
+    size_t stu_cnt = S.size();
+
+    std::vector<std::vector<std::pair<int, ld>>> options(stu_cnt);
+    DistMap walk_dists;
+    const ld search_limit = std::max<ld>(wp.max * 1.5L, wp.max + 25.0L);
+    for(size_t i = 0; i < stop_cnt; ++i) {
+        node_t source = valid_node(g, sw[i], true);
+        if(source < 0) continue;
+        dijkstra_cut(g, source, search_limit, true, walk_dists);
+        for(size_t j = 0; j < stu_cnt; ++j) {
+            node_t node = walk_node_safe(g, W, static_cast<int>(j), S);
+            auto it = walk_dists.find(node);
+            if(it == walk_dists.end()) continue;
+            ld d = it->second;
+            if(std::isnan(d) || d >= INF || d > search_limit) continue;
+            options[j].push_back({static_cast<int>(i), d});
+        }
+        walk_dists.clear();
+    }
+
+    std::vector<int> cap(stop_cnt, (P.cap > 0) ? P.cap : INT_MAX);
+    std::vector<std::vector<int>> membership(stop_cnt);
+
+    for(size_t j = 0; j < stu_cnt; ++j) {
+        auto& opts = options[j];
+        if(opts.empty()) {
+            for(size_t i = 0; i < stop_cnt; ++i) {
+                opts.push_back({static_cast<int>(i), INF});
+            }
+        }
+        std::sort(opts.begin(), opts.end(), [](const auto& a, const auto& b){
+            return a.second < b.second;
+        });
+        bool placed = false;
+        for(const auto& pr : opts) {
+            int si = pr.first;
+            if(si < 0 || si >= static_cast<int>(stop_cnt)) continue;
+            if(membership[si].size() >= static_cast<size_t>(cap[si])) continue;
+            membership[si].push_back(static_cast<int>(j));
+            placed = true;
+            break;
+        }
+        if(!placed) {
+            int fallback = opts.front().first;
+            fallback = std::max(0, std::min(static_cast<int>(stop_cnt) - 1, fallback));
+            membership[fallback].push_back(static_cast<int>(j));
+        }
+    }
+
+    for(size_t i = 0; i < stop_cnt; ++i) {
+        auto& members = membership[i];
+        if(members.empty()) {
+            st[i]->students.clear();
+            continue;
+        }
+        StopCandidate cand = build_cand(members, W, D, S, g, wp);
+        if(cand.coord) {
+            delete st[i]->pos;
+            st[i]->pos = cand.coord;
+            sw[i] = cand.walk;
+            sd[i] = cand.drive;
+        }
+        st[i]->students.clear();
+        st[i]->students.reserve(members.size());
+        for(int idx : members) {
+            st[i]->students.push_back(S[idx]->id);
+        }
+    }
+}
+
+static void merge_culdesac_stops(
+    Graph* g,
+    vector<BusStop*>& st,
+    vector<node_t>& sw,
+    vector<node_t>& sd,
+    ld max_walk
+) {
+    if(!g || st.size() < 2) return;
+    const ld base_limit = std::min<ld>(std::max<ld>(max_walk * 0.5L, 90.0L), max_walk * 0.9L);
+    bool changed = true;
+    while(changed) {
+        changed = false;
+        for(size_t i = 0; i < st.size() && !changed; ++i) {
+            node_t walk_i = valid_node(g, sw[i], true);
+            node_t drive_i = valid_node(g, sd[i], false);
+            if(walk_i < 0 || drive_i < 0) continue;
+            int deg_i = drive_deg(g, drive_i);
+            if(deg_i > 2) continue;
+            DistMap dist;
+            dijkstra_cut(g, walk_i, base_limit, true, dist);
+            size_t best_j = std::numeric_limits<size_t>::max();
+            ld best_d = std::numeric_limits<ld>::max();
+            for(size_t j = 0; j < st.size(); ++j) {
+                if(i == j) continue;
+                node_t walk_j = valid_node(g, sw[j], true);
+                auto it = dist.find(walk_j);
+                if(it == dist.end()) continue;
+                ld d = it->second;
+                if(d > base_limit) continue;
+                int deg_j = drive_deg(g, valid_node(g, sd[j], false));
+                if(deg_j <= 1 && deg_i <= 1) continue;
+                if(deg_j < deg_i && d > base_limit * 0.6L) continue;
+                if(d < best_d) {
+                    best_d = d;
+                    best_j = j;
+                }
+            }
+            if(best_j != std::numeric_limits<size_t>::max()) {
+                st[best_j]->students.insert(
+                    st[best_j]->students.end(),
+                    st[i]->students.begin(),
+                    st[i]->students.end()
+                );
+                delete st[i]->pos;
+                delete st[i];
+                st.erase(st.begin() + i);
+                sw.erase(sw.begin() + i);
+                sd.erase(sd.begin() + i);
+                changed = true;
+            }
+        }
+    }
+}
+
 vector<BusStop*> run(const vector<Student*>&S,Graph*g,const Params&Pin){
     Params P=Pin;
     if(P.seed_radius<=0)P.seed_radius=P.max_walk_dist;
@@ -448,13 +986,17 @@ vector<BusStop*> run(const vector<Student*>&S,Graph*g,const Params&Pin){
         sw.push_back(c.walk);sd.push_back(c.drive);
     };
     for(auto&M:clusters){
-        auto groups = partition_cluster(M, W, g, wp, P, S);
+        auto groups = split_cluster_kmedoids(M, W, g, S, wp, P);
+        if(groups.empty()) groups.push_back(M);
         for(auto& subset : groups) emit(build_cand(subset, W, D, S, g, wp));
     }
     for(int i=0;i<(int)S.size();++i)
         if(!as[i])emit(build_cand({i},W,D,S,g,wp));
     refine(st,sw,sd,S,map,W,D,g,wp,P);
     consolidate_global(st,sw,sd,S,W,D,g,wp,P);
+    merge_close_stops(g, st, sw, sd, std::min<ld>(wp.max * 0.35L, 75.0L));
+    merge_culdesac_stops(g, st, sw, sd, wp.max);
+    reassign_students(st,sw,sd,S,W,D,g,wp,P);
     return st;
 }
 vector<BusStop*> place_stops(const vector<Student*>&S,Graph*g,const Params&P,
