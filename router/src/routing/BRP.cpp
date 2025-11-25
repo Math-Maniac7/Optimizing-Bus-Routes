@@ -1081,7 +1081,8 @@ void BRP::do_p2() {
         stop_graph_nodes[i] = graph->get_node(this->stops.value()[i]->pos, false);
     }
     std::vector<int> assignment;
-    for(int _ = 0; _ < 50; _++) {
+    const int ITERCNT = 5;
+    for(int _ = 0; _ < ITERCNT; _++) {
         std::cout << "ITERATION : " << _ << std::endl;
 
         //compute assignment costs
