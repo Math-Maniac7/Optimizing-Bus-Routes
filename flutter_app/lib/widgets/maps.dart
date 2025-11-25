@@ -650,10 +650,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
           ),
 
         // Sidebar (Phase 2 + 3 only)
-        if (markerInfo &&
-            widget.isModified &&
-            (widget.phaseType == Phase.phaseTwo ||
-                widget.phaseType == Phase.phaseThree))
+        if (markerInfo && widget.isModified)
           Positioned(
             left: 0,
             width: screenWidth * 0.16,
@@ -750,61 +747,67 @@ class _GoogleMapsState extends State<GoogleMaps> {
                   SizedBox(height: screenHeight * 0.02),
 
                   // Bus assignment display + edit field
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (!isEditingBus)
-                        Text(
-                          'Bus $busAssignment',
-                          style: GoogleFonts.quicksand(
-                            fontSize: 25,
-                            fontWeight: FontWeight.w600,
-                            color: const Color.fromRGBO(57, 103, 136, 1),
-                          ),
-                        )
-                      else
-                        Row(
-                          children: [
-                            Text(
-                              'Bus',
-                              style: GoogleFonts.quicksand(
-                                fontSize: 25,
-                                fontWeight: FontWeight.w600,
-                                color: const Color.fromRGBO(57, 103, 136, 1),
-                              ),
+                  if (phaseType != Phase.phaseOne)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (!isEditingBus)
+                          Text(
+                            'Bus $busAssignment',
+                            style: GoogleFonts.quicksand(
+                              fontSize: 25,
+                              fontWeight: FontWeight.w600,
+                              color: const Color.fromRGBO(57, 103, 136, 1),
                             ),
-                            SizedBox(width: screenWidth * 0.01),
-                            SizedBox(
-                              width: screenWidth * 0.03,
-                              child: TextField(
-                                controller: busController,
+                          )
+                        else
+                          Row(
+                            children: [
+                              Text(
+                                'Bus',
                                 style: GoogleFonts.quicksand(
-                                  fontSize: 20,
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.w600,
                                   color: const Color.fromRGBO(57, 103, 136, 1),
                                 ),
-                                decoration: const InputDecoration(
-                                  border: OutlineInputBorder(),
-                                ),
-                                keyboardType: TextInputType.number,
                               ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
+                              SizedBox(width: screenWidth * 0.01),
+                              SizedBox(
+                                width: screenWidth * 0.03,
+                                child: TextField(
+                                  controller: busController,
+                                  style: GoogleFonts.quicksand(
+                                    fontSize: 20,
+                                    color: const Color.fromRGBO(
+                                      57,
+                                      103,
+                                      136,
+                                      1,
+                                    ),
+                                  ),
+                                  decoration: const InputDecoration(
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
 
                   SizedBox(height: screenHeight * 0.02),
-
-                  Center(
-                    child: Text(
-                      'Bus Route Order',
-                      style: GoogleFonts.quicksand(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w600,
-                        color: const Color.fromRGBO(57, 103, 136, 1),
+                  if (phaseType == Phase.phaseThree)
+                    Center(
+                      child: Text(
+                        'Bus Route Order',
+                        style: GoogleFonts.quicksand(
+                          fontSize: 25,
+                          fontWeight: FontWeight.w600,
+                          color: const Color.fromRGBO(57, 103, 136, 1),
+                        ),
                       ),
                     ),
-                  ),
 
                   SizedBox(height: screenHeight * 0.02),
 

@@ -378,7 +378,6 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                     isGenerating: _isGeneratingRoutes,
                                     interactionEnabled: !_isDrawerOpen,
                                     phaseType: selectedPhase,
-                                    isGenerating: _isGeneratingRoutes,
                                   ),
                                 ),
                               ),
