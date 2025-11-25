@@ -553,8 +553,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       // Parse the BRP JSON result (not GeoJSON)
       final brpResult = jsonDecode(resultString) as Map<String, dynamic>;
-      debugPrint('Parsed BRP JSON result');
-      debugPrint("RAW BRP RESULT:\n$resultString");
+      //debugPrint('Parsed BRP JSON result');
+      //debugPrint("RAW BRP RESULT:\n$resultString");
 
       // Extract stops from the BRP JSON (stops are already in the correct format)
       final stops = brpResult['stops'] as List<dynamic>?;
@@ -681,8 +681,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       // Parse the BRP JSON result (not GeoJSON)
       final brpResult = jsonDecode(resultString) as Map<String, dynamic>;
-      debugPrint('Parsed BRP JSON result');
-      debugPrint("RAW BRP RESULT:\n$resultString");
+      //debugPrint('Parsed BRP JSON result');
+      //debugPrint("RAW BRP RESULT:\n$resultString");
 
       // Extract assignments from the BRP JSON (assignments are already in the correct format)
       final assignments = brpResult['assignments'] as List<dynamic>?;
@@ -823,8 +823,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       // Parse the BRP JSON result (not GeoJSON)
       final brpResult = jsonDecode(resultString) as Map<String, dynamic>;
-      debugPrint('Parsed BRP JSON result');
-      debugPrint("RAW BRP RESULT:\n$resultString");
+      //debugPrint('Parsed BRP JSON result');
+      //debugPrint("RAW BRP RESULT:\n$resultString");
 
       // Extract routes from the BRP JSON (routes are already in the correct format)
       final routes = brpResult['routes'] as List<dynamic>?;
@@ -868,7 +868,9 @@ class _RouteOptimizationState extends State<RouteOptimization> {
         if (sessionId != null) {
           debugPrint('Saved routes to Firestore with session ID: $sessionId');
         } else {
-          debugPrint('WARNING: Could not save routes to Firestore (user not authenticated)');
+          debugPrint(
+            'WARNING: Could not save routes to Firestore (user not authenticated)',
+          );
         }
       } catch (e) {
         // Log error but don't fail the route generation
