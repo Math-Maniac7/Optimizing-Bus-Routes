@@ -8,6 +8,7 @@ import '../widgets/maps.dart';
 import '../widgets/location_upload_drawer.dart';
 import '../WASM/wasm_interop.dart';
 import '../services/storage_service.dart';
+import '../services/firebase_route_service.dart';
 import 'package:collection/collection.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/geocoding_service.dart';
@@ -374,6 +375,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                     isSaved: _saveMarkers,
                                     cancelModify: _cancelModify,
                                     addMarker: _addMarker,
+                                    isGenerating: _isGeneratingRoutes,
                                     interactionEnabled: !_isDrawerOpen,
                                     phaseType: selectedPhase,
                                     isGenerating: _isGeneratingRoutes,
@@ -849,6 +851,27 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       // Save the updated JSON back to session storage
       await StorageService.saveBusRouteData(updatedJsonData);
       debugPrint('Saved updated JSON to session storage');
+
+      // Save routes to Firebase Firestore
+      try {
+        final sessionId = await FirebaseRouteService.saveBusRoutes(
+          routes,
+          sessionData: updatedJsonData,
+        );
+        if (sessionId != null) {
+          debugPrint('Saved routes to Firestore with session ID: $sessionId');
+        } else {
+          debugPrint('WARNING: Could not save routes to Firestore (user not authenticated)');
+        }
+      } catch (e) {
+        // Log error but don't fail the route generation
+        debugPrint('ERROR: Failed to save routes to Firestore: $e');
+        // Optionally show a warning to the user
+        _showMessage(
+          'Routes generated successfully, but failed to save to cloud storage: ${e.toString()}',
+          isError: true,
+        );
+      }
 
       setState(() {
         _mapReloadKey++; // force map to rebuild
