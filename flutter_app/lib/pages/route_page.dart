@@ -44,8 +44,8 @@ class RouteOptimization extends StatefulWidget {
 
 class _RouteOptimizationState extends State<RouteOptimization> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  Phase? selectedPhase = Phase.phaseOne; // Default to Phase 1
-  Phase? savedPhase = Phase.phaseOne;
+  Phase? selectedPhase; // Default to Phase 1
+  Phase? savedPhase;
   bool _isModified = false;
   bool _isDrawerOpen = false;
   bool _isGeneratingRoutes = false;
@@ -55,6 +55,13 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   bool _cancelModify = false;
   int _mapReloadKey = 0;
   Completer<void>? _routeGenerationCompleter;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedPhase = Phase.phaseOne;
+    savedPhase = Phase.phaseOne;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +199,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                               borderRadius: BorderRadius.circular(20),
                               child: AbsorbPointer(
                                 absorbing: _isDrawerOpen,
+                                
                                 child: GoogleMaps(
                                   key: ValueKey(_mapReloadKey),
                                   isModified: _isModified,

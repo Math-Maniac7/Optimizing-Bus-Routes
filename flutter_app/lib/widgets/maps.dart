@@ -62,6 +62,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   final Map<String, Marker> _markers = {};
   Set<Polyline> polylines = {};
+  Map<int, Color> routeColors = {};
+  Map<int, BitmapDescriptor> routeIcons = {};
 
   List<dynamic> stops = [];
   List<dynamic> students = [];
@@ -203,7 +205,18 @@ class _GoogleMapsState extends State<GoogleMaps> {
         case Phase.phaseThree:
           stops = jsonData?['stops'] ?? [];
           assignments = jsonData?['assignments'] ?? [];
+
           routes = jsonData?['routes'] ?? [];
+          for (final a in assignments) {
+            final bus = a['bus'];
+            for (final stopId in a['stops']) {
+              for (final s in stops) {
+                if (s['id'] == stopId) {
+                  s['bus'] = bus;
+                }
+              }
+            }
+          }
           buildMarkers(stops, MarkerType.stop);
           buildPolylines();
           break;
@@ -237,7 +250,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
         draggable:
             widget.phaseType != Phase.phaseThree &&
             widget.isModified, // Phase 3 = not draggable
-        icon: (flag == MarkerType.stop) ? stopIcon : studentIcon,
+        icon: widget.phaseType == Phase.phaseThree && flag == MarkerType.stop
+            ? routeIcons[m['bus']] ?? stopIcon
+            : (flag == MarkerType.stop ? stopIcon : studentIcon),
         onDragStart: widget.phaseType == Phase.phaseThree
             ? null
             : (position) {
@@ -287,14 +302,23 @@ class _GoogleMapsState extends State<GoogleMaps> {
     Set<Polyline> temp = {};
     int idCounter = 0;
 
+    routeColors.clear();
+
     for (final r in routes) {
-      final paths = r['paths'];
+      if (r == null || r['assignment'] == null || r['paths'] == null) {
+        print("INVALID ROUTE ENTRY: $r");
+        continue;
+      }
+      final bus = r['assignment'] as int;
+      final paths = r['paths'] as List;
       final randColor = Color.fromARGB(
         255,
         Random().nextInt(200),
         Random().nextInt(200),
         Random().nextInt(200),
       );
+
+      routeColors[bus] = randColor;
 
       for (final p in paths) {
         final points = (p as List)
@@ -304,7 +328,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
         temp.add(
           Polyline(
             polylineId: PolylineId('route_${idCounter++}'),
-            width: 5,
+            width: 7,
             color: randColor,
             points: points,
             startCap: Cap.roundCap,
@@ -318,6 +342,35 @@ class _GoogleMapsState extends State<GoogleMaps> {
     setState(() {
       polylines = temp;
     });
+
+    _generateRouteIcons().then((_) {
+      setState(() {
+        _markers.clear();
+        buildMarkers(stops, MarkerType.stop); // <-- update marker colors
+      });
+    });
+  }
+
+  Future<void> _generateRouteIcons() async {
+    routeIcons.clear();
+
+    final base = Marker(
+      markerId: const MarkerId('tmp'),
+      position: LatLng(0, 0),
+    );
+
+    for (final entry in routeColors.entries) {
+      final bus = entry.key;
+      final color = entry.value;
+
+      final marker = await GoogleMapsCustomMarker.createCustomMarker(
+        marker: base,
+        shape: MarkerShape.pin,
+        backgroundColor: color,
+      );
+
+      routeIcons[bus] = marker.icon;
+    }
   }
 
   //didUpdateWidget is the dynamic way at noticing when one of the widgets from parent has changed
@@ -427,8 +480,22 @@ class _GoogleMapsState extends State<GoogleMaps> {
           break;
 
         case Phase.phaseThree:
+          for (final a in assignments) {
+            final bus = a['bus'];
+            for (final stopId in a['stops']) {
+              for (final s in stops) {
+                if (s['id'] == stopId) {
+                  s['bus'] = bus;
+                }
+              }
+            }
+          }
+          data['stops'] = stops;
+          data['assignments'] = assignments;
+          //validate checker
+
+          data.remove('routes');
           buildMarkers(stops, MarkerType.stop);
-          buildPolylines();
           break;
       }
     }
@@ -437,6 +504,14 @@ class _GoogleMapsState extends State<GoogleMaps> {
     if (oldWidget.phaseType != widget.phaseType) {
       final oldPhase = oldWidget.phaseType;
       final newPhase = widget.phaseType;
+
+      if (newPhase == Phase.phaseOne) {
+        final jsonData = StorageService.getBusRouteData();
+        if (jsonData != null && jsonData.containsKey('routes')) {
+          jsonData.remove('routes');
+          StorageService.saveBusRouteData(jsonData);
+        }
+      }
 
       final jsonData = StorageService.getBusRouteData();
       final Map<String, dynamic> data = jsonData != null
@@ -462,7 +537,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
           break;
 
         case Phase.phaseThree:
-          
           break;
       }
 
@@ -470,7 +544,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
       stops = refreshed?['stops'] ?? [];
       students = refreshed?['students'] ?? [];
       assignments = refreshed?['assignments'] ?? [];
-      routes = refreshed?['routes'] ?? [];
+      routes = [];
 
       _markers.clear();
 
@@ -494,7 +568,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
         case Phase.phaseThree:
           if (widget.isGenerating) {
             buildMarkers(stops, MarkerType.stop);
-            buildPolylines();
           }
           break;
       }
@@ -572,7 +645,10 @@ class _GoogleMapsState extends State<GoogleMaps> {
           ),
 
         // Sidebar
-        if (markerInfo)
+        if (markerInfo &&
+            widget.isModified &&
+            (widget.phaseType == Phase.phaseTwo ||
+                widget.phaseType == Phase.phaseThree))
           Positioned(
             left: 0,
             width: screenWidth * 0.16,
@@ -666,93 +742,158 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
                   SizedBox(height: screenHeight * 0.02),
 
-                  // Bus assignment display only
-                  Center(
-                    child: Text(
-                      'Bus $busAssignment',
-                      style: GoogleFonts.quicksand(
-                        fontSize: 25,
-                        fontWeight: FontWeight.w600,
-                        color: const Color.fromARGB(255, 48, 56, 149),
-                      ),
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (!isEditingBus)
+                        Text(
+                          'Bus $busAssignment',
+                          style: GoogleFonts.quicksand(
+                            fontSize: 25,
+                            fontWeight: FontWeight.w600,
+                            color: const Color.fromARGB(255, 48, 56, 149),
+                          ),
+                        )
+                      else
+                        Row(
+                          children: [
+                            Text(
+                              'Bus',
+                              style: GoogleFonts.quicksand(
+                                fontSize: 25,
+                                fontWeight: FontWeight.w600,
+                                color: const Color.fromARGB(255, 48, 56, 149),
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.01),
+                            SizedBox(
+                              width: screenWidth * 0.03,
+                              child: TextField(
+                                controller: busController,
+                                style: GoogleFonts.quicksand(
+                                  fontSize: 20,
+                                  color: const Color.fromARGB(255, 48, 56, 149),
+                                ),
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
                   ),
 
                   SizedBox(height: screenHeight * 0.02),
-
-                  // Edit button disabled in Phase 3
-                  if (!isEditingBus && widget.phaseType != Phase.phaseThree)
-                    TextButton(
-                      style: ButtonStyle(
-                        backgroundColor: WidgetStatePropertyAll<Color>(
-                          Color.fromARGB(117, 255, 255, 255),
+                  if (phaseType == Phase.phaseThree)
+                    Center(
+                      child: Container(
+                        height: screenHeight * 0.2,
+                        width: screenWidth * 0.4,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: WidgetStatePropertyAll<EdgeInsets>(
-                          EdgeInsets.symmetric(
-                            horizontal: screenWidth * .01,
-                            vertical: screenHeight * .01,
+                        child: Scrollbar(
+                          thumbVisibility: true, // show scroll thumb
+                          child: ListView(
+                            scrollDirection: Axis.vertical,
+                            padding: const EdgeInsets.all(8),
+                            children: [
+                              for (final stopId
+                                  in assignments[busAssignment - 1]['stops'])
+                                Center( 
+                                  // center each item
+                                  child: Text(
+                                    "Stop $stopId",
+                                    style: GoogleFonts.quicksand(
+                                      fontSize: 25,
+                                      color: const Color.fromRGBO(
+                                        57,
+                                        103,
+                                        136,
+                                        1,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          isEditingBus = true;
-                        });
-                      },
-                      child: Text(
-                        "Edit",
-                        style: GoogleFonts.quicksand(
-                          fontSize: 25,
-                          color: const Color.fromRGBO(57, 103, 136, 1),
                         ),
                       ),
                     ),
 
-                  // Save button disabled in Phase 3
-                  if (isEditingBus && widget.phaseType != Phase.phaseThree)
-                    TextButton(
-                      style: ButtonStyle(
-                        backgroundColor: WidgetStatePropertyAll<Color>(
-                          Color.fromARGB(117, 255, 255, 255),
-                        ),
-                        padding: WidgetStatePropertyAll<EdgeInsets>(
-                          EdgeInsets.symmetric(
-                            horizontal: screenWidth * .01,
-                            vertical: screenHeight * .01,
-                          ),
-                        ),
-                      ),
-                      onPressed: () {
-                        final busNumber = int.tryParse(busController.text) ?? 0;
+                  SizedBox(height: screenHeight * 0.02),
 
-                        if (busNumber < 1 || busNumber > assignments.length) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Center(
-                                child: Text('Error: Bus number does not exist'),
+                  // EDIT + SAVE buttons (Phase 2 ONLY)
+                  if (widget.phaseType == Phase.phaseTwo)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (!isEditingBus)
+                          TextButton(
+                            style: ButtonStyle(
+                              backgroundColor: WidgetStatePropertyAll<Color>(
+                                const Color.fromARGB(117, 255, 255, 255),
                               ),
                             ),
-                          );
-                          return;
-                        }
+                            onPressed: () {
+                              setState(() {
+                                isEditingBus = true;
+                              });
+                            },
+                            child: Text(
+                              "Edit",
+                              style: GoogleFonts.quicksand(
+                                fontSize: 25,
+                                color: const Color.fromRGBO(57, 103, 136, 1),
+                              ),
+                            ),
+                          ),
+                        if (isEditingBus)
+                          TextButton(
+                            style: ButtonStyle(
+                              backgroundColor: WidgetStatePropertyAll<Color>(
+                                const Color.fromARGB(117, 255, 255, 255),
+                              ),
+                            ),
+                            onPressed: () {
+                              final busNum =
+                                  int.tryParse(busController.text) ?? 0;
 
-                        for (final a in assignments) {
-                          if (a['stops'].contains(touchedMarkerId)) {
-                            a['bus'] = busNumber - 1;
-                          }
-                        }
+                              if (busNum < 1 || busNum > assignments.length) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Center(
+                                      child: Text(
+                                        "Error: Bus number does not exist",
+                                      ),
+                                    ),
+                                  ),
+                                );
+                                return;
+                              }
 
-                        setState(() {
-                          isEditingBus = false;
-                        });
-                      },
-                      child: Text(
-                        "Save",
-                        style: GoogleFonts.quicksand(
-                          fontSize: 25,
-                          color: const Color.fromRGBO(57, 103, 136, 1),
-                        ),
-                      ),
+                              for (final a in assignments) {
+                                if (a['stops'].contains(touchedMarkerId)) {
+                                  a['bus'] = busNum - 1;
+                                }
+                              }
+
+                              setState(() {
+                                isEditingBus = false;
+                              });
+                            },
+                            child: Text(
+                              "Save",
+                              style: GoogleFonts.quicksand(
+                                fontSize: 25,
+                                color: const Color.fromRGBO(57, 103, 136, 1),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                 ],
               ),
