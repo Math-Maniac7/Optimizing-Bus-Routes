@@ -9,6 +9,8 @@ import '../widgets/location_upload_drawer.dart';
 import '../WASM/wasm_interop.dart';
 import '../services/storage_service.dart';
 import 'package:collection/collection.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../services/geocoding_service.dart';
 
 typedef PhaseType = DropdownMenuEntry<Phase>;
 
@@ -54,7 +56,79 @@ class _RouteOptimizationState extends State<RouteOptimization> {
   bool _saveMarkers = false;
   bool _cancelModify = false;
   int _mapReloadKey = 0;
+  String searchQuery = "";
+  GlobalKey<GoogleMapsState> mapStateKey = GlobalKey<GoogleMapsState>();
+  final List<Map<String, double>> _geocodedSuggestions = [];
+  final bool _isGeocoding = false;
+
   Completer<void>? _routeGenerationCompleter;
+
+  List<String> _getAddresses() {
+    final jsonData = StorageService.getBusRouteData();
+    if (jsonData == null) return [];
+
+    final students = jsonData['students'] as List<dynamic>? ?? [];
+    final stops = jsonData['stops'] as List<dynamic>? ?? [];
+
+    // Convert students and stops to readable strings
+    final studentIds = students.map((s) => "Student ${s['id']}").toList();
+    final stopIds = stops.map((s) => "Stop ${s['id']}").toList();
+
+    // Combine both lists
+    return [...studentIds, ...stopIds];
+  }
+
+  /// Returns the coordinates (latitude and longitude) for a given location label.
+  /// The label can be like "Student 0" or "Stop 1".
+  /// Returns null if the label is not found or if data is missing.
+  LatLng? getCoordinatesForLabel(String label) {
+    final jsonData = StorageService.getBusRouteData();
+    if (jsonData == null) return null;
+
+    final students = jsonData['students'] as List<dynamic>? ?? [];
+    final stops = jsonData['stops'] as List<dynamic>? ?? [];
+
+    if (label.startsWith('Student ')) {
+      final id = int.tryParse(label.replaceFirst('Student ', ''));
+      if (id == null) return null;
+
+      final student = students.firstWhereOrNull((s) => s['id'] == id);
+      if (student == null) return null;
+
+      final lat = (student['pos']['lat'] as num?)?.toDouble();
+      final lng = (student['pos']['lon'] as num?)?.toDouble();
+      if (lat == null || lng == null) return null;
+
+      return LatLng(lat, lng);
+    } else if (label.startsWith('Stop ')) {
+      final id = int.tryParse(label.replaceFirst('Stop ', ''));
+      if (id == null) return null;
+
+      final stop = stops.firstWhereOrNull((s) => s['id'] == id);
+      if (stop == null) return null;
+
+      final lat = (stop['pos']['lat'] as num?)?.toDouble();
+      final lng = (stop['pos']['lon'] as num?)?.toDouble();
+      if (lat == null || lng == null) return null;
+
+      return LatLng(lat, lng);
+    } else {
+      GeocodingService.geocodeAddress(label).then((coords) {
+        final latLng = coords != null
+            ? LatLng(coords['lat']!, coords['lon']!)
+            : null;
+
+        if (latLng != null) {
+          // return
+          return latLng;
+        }
+        return null;
+      });
+    }
+
+    // Label didn't match Student or Stop
+    return null;
+  }
 
   @override
   void initState() {
@@ -81,6 +155,11 @@ class _RouteOptimizationState extends State<RouteOptimization> {
         } else {
           setState(() {
             _isDrawerOpen = isOpened;
+            //update map
+            setState(() {
+              _mapReloadKey++; // force map to rebuild
+              mapStateKey = GlobalKey<GoogleMapsState>();
+            });
           });
         }
       },
@@ -111,6 +190,90 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            //search bar
+                            SearchAnchor(
+                              key: ValueKey(_mapReloadKey),
+                              builder: (context, controller) {
+                                return SearchBar(
+                                  hintText: "Search pins...",
+                                  onTap:
+                                      controller.openView, // open suggestions
+                                  onChanged: (_) => controller.openView(),
+                                );
+                              },
+
+                              suggestionsBuilder: (context, controller) {
+                                final items = _getAddresses();
+
+                                // Filter items to match typed text
+                                final filtered = items
+                                    .where(
+                                      (item) => item.toLowerCase().contains(
+                                        controller.text.toLowerCase(),
+                                      ),
+                                    )
+                                    .toList();
+
+                                // Always add the typed text as a selectable option
+                                final suggestions = <String>[
+                                  if (controller.text.isNotEmpty &&
+                                      !filtered.contains(controller.text))
+                                    controller.text,
+                                  ...filtered,
+                                ];
+
+                                return suggestions.map((item) {
+                                  return ListTile(
+                                    title: Text(item),
+                                    onTap: () async {
+                                      controller.closeView(item);
+
+                                      LatLng? latLng;
+
+                                      // First, check if it's a saved Student/Stop
+                                      latLng = getCoordinatesForLabel(item);
+
+                                      // If not found, fallback to geocoding
+                                      if (latLng == null) {
+                                        final coords =
+                                            await GeocodingService.geocodeAddress(
+                                              item,
+                                            );
+                                        if (coords != null) {
+                                          latLng = LatLng(
+                                            coords['lat']!,
+                                            coords['lon']!,
+                                          );
+                                        }
+                                      }
+
+                                      if (latLng != null) {
+                                        mapStateKey.currentState?.mapController
+                                            .animateCamera(
+                                              CameraUpdate.newLatLngZoom(
+                                                latLng,
+                                                16,
+                                              ),
+                                            );
+                                      } else {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Could not find location: $item',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  );
+                                }).toList();
+                              },
+                            ),
+
+                            SizedBox(height: screenHeight * 0.02),
+
                             if (!_isModified) ...[
                               _buildSideButton("Add Locations", screenWidth),
                               SizedBox(height: screenHeight * 0.02),
@@ -199,19 +362,26 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                               borderRadius: BorderRadius.circular(20),
                               child: AbsorbPointer(
                                 absorbing: _isDrawerOpen,
-                                
-                                child: GoogleMaps(
-                                  key: ValueKey(_mapReloadKey),
-                                  isModified: _isModified,
-                                  isSaved: _saveMarkers,
-                                  cancelModify: _cancelModify,
-                                  addMarker: _addMarker,
-                                  isGenerating: _isGeneratingRoutes,
-                                  interactionEnabled: !_isDrawerOpen,
-                                  phaseType: selectedPhase,
+                                child: KeyedSubtree(
+                                  key: ValueKey(
+                                    _mapReloadKey,
+                                  ), // ← forces full rebuild when changed
+
+                                  child: GoogleMaps(
+                                    key:
+                                        mapStateKey, // ← state key for controlling map
+                                    isModified: _isModified,
+                                    isSaved: _saveMarkers,
+                                    cancelModify: _cancelModify,
+                                    addMarker: _addMarker,
+                                    interactionEnabled: !_isDrawerOpen,
+                                    phaseType: selectedPhase,
+                                    isGenerating: _isGeneratingRoutes,
+                                  ),
                                 ),
                               ),
                             ),
+
                             if (_isModified)
                               IgnorePointer(
                                 child: Container(
@@ -315,10 +485,15 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
   Future<void> _onGenerateRoutes() async {
     debugPrint("Generate Routes button pressed");
+    final phase = selectedPhase;
+
+    final phaseNumber = phase?.phase;
+
+    if (phaseNumber == 1) {
+      StorageService.clearGeneratedRouteData();
+    }
 
     // Determine which phase to use (default to Phase 1 if not selected)
-    final phase = selectedPhase;
-    final phaseNumber = phase?.phase;
 
     if (phaseNumber == 1) {
       await _generatePhase1Routes();
@@ -403,6 +578,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       setState(() {
         _mapReloadKey++; // force map to rebuild
+        mapStateKey = GlobalKey<GoogleMapsState>();
       });
 
       _showMessage('Routes generated successfully!', isError: false);
@@ -531,6 +707,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       setState(() {
         _mapReloadKey++; // force map to rebuild
+        mapStateKey = GlobalKey<GoogleMapsState>();
       });
 
       _showMessage('Routes generated successfully!', isError: false);
@@ -590,6 +767,10 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       );
       return;
     }
+
+    debugPrint("===== CURRENT SESSION JSON BEFORE PHASE 3 =====");
+    debugPrint(const JsonEncoder.withIndent('  ').convert(jsonData));
+    debugPrint("===============================================");
 
     // Phase 3 requires stops from Phase 1 and assignments from Phase 2
     final stops = jsonData['stops'] as List<dynamic>?;
@@ -671,6 +852,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       setState(() {
         _mapReloadKey++; // force map to rebuild
+        mapStateKey = GlobalKey<GoogleMapsState>();
       });
 
       _showMessage('Routes generated successfully!', isError: false);
