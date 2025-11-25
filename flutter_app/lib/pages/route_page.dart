@@ -525,6 +525,11 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       return;
     }
 
+    // Clear derived fields from any previous run so validation doesn't see stale assignments/routes
+    jsonData.remove('assignments');
+    jsonData.remove('routes');
+    jsonData.remove('evals');
+
     // Create completer to track completion
     _routeGenerationCompleter = Completer<void>();
 
@@ -639,6 +644,9 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       );
       return;
     }
+
+    // Remove any old routes before regenerating assignments
+    jsonData.remove('routes');
 
     // Phase 2 requires stops from Phase 1
     final stops = jsonData['stops'] as List<dynamic>?;

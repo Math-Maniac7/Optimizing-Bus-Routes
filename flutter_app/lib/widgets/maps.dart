@@ -66,6 +66,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
   Set<Polyline> polylines = {};
   Map<int, Color> routeColors = {};
   Map<int, BitmapDescriptor> routeIcons = {};
+  Map<int, Color> busColors = {};
+  Map<int, BitmapDescriptor> busIcons = {};
+  static const String _busColorsKey = 'busColors';
 
   List<dynamic> stops = [];
   List<dynamic> students = [];
@@ -200,6 +203,15 @@ class _GoogleMapsState extends State<GoogleMaps> {
     }
   }
 
+  int _nextMarkerId() {
+    final ids = <int>[
+      ...stops.map((s) => s['id'] as int),
+      ...students.map((s) => s['id'] as int),
+    ];
+    if (ids.isEmpty) return 0;
+    return ids.reduce((a, b) => a > b ? a : b) + 1;
+  }
+
   Future<void> _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
 
@@ -209,6 +221,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
     if (StorageService.hasBusRouteData()) {
       final jsonData = StorageService.getBusRouteData();
+      _loadBusColors(jsonData);
 
       switch (phase) {
         case null:
@@ -223,14 +236,20 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
         case Phase.phaseTwo:
           stops = jsonData?['stops'] ?? [];
+          students = jsonData?['students'] ?? [];
           assignments = jsonData?['assignments'] ?? [];
+          _assignBusColors();
+          await _generateBusIcons();
           assignBusToStops();
           buildMarkers(stops, MarkerType.stop);
           break;
 
         case Phase.phaseThree:
           stops = jsonData?['stops'] ?? [];
+          students = jsonData?['students'] ?? [];
           assignments = jsonData?['assignments'] ?? [];
+          _assignBusColors();
+          await _generateBusIcons();
           assignBusToStops();
           routes = jsonData?['routes'] ?? [];
           buildMarkers(stops, MarkerType.stop);
@@ -264,9 +283,18 @@ class _GoogleMapsState extends State<GoogleMaps> {
         markerId: MarkerId(key),
         position: LatLng(lat.toDouble(), lon.toDouble()),
         draggable: widget.phaseType != Phase.phaseThree && widget.isModified,
-        icon: widget.phaseType == Phase.phaseThree && flag == MarkerType.stop
-            ? routeIcons[busForStop(currentId)] ?? stopIcon
-            : (flag == MarkerType.stop ? stopIcon : studentIcon),
+        icon: () {
+          if (flag == MarkerType.stop) {
+            final busId = busForStop(currentId);
+            if (busId != null) {
+              return routeIcons[busId] ??
+                  busIcons[busId] ??
+                  stopIcon;
+            }
+            return stopIcon;
+          }
+          return studentIcon;
+        }(),
         onDragStart: widget.phaseType == Phase.phaseThree
             ? null
             : (position) {
@@ -313,6 +341,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   }
 
   void buildPolylines() {
+    _assignBusColors();
     Set<Polyline> temp = {};
     int idCounter = 0;
 
@@ -327,12 +356,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final bus = r['assignment'] as int;
       final paths = r['paths'] as List;
 
-      final randColor = Color.fromARGB(
-        255,
-        Random().nextInt(200),
-        Random().nextInt(200),
-        Random().nextInt(200),
-      );
+      final randColor = busColors[bus] ??
+          Color.fromARGB(
+            255,
+            Random().nextInt(200),
+            Random().nextInt(200),
+            Random().nextInt(200),
+          );
 
       routeColors[bus] = randColor;
 
@@ -363,6 +393,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
       setState(() {
         _markers.clear();
         buildMarkers(stops, MarkerType.stop);
+        buildMarkers(students, MarkerType.student);
       });
     });
   }
@@ -386,6 +417,66 @@ class _GoogleMapsState extends State<GoogleMaps> {
       );
 
       routeIcons[bus] = marker.icon;
+    }
+  }
+
+  void _assignBusColors() {
+    busColors.clear();
+    final busIds = assignments
+        .map((a) => a['bus'])
+        .where((id) => id != null)
+        .cast<int>()
+        .toSet()
+        .toList()
+      ..sort();
+
+    for (var i = 0; i < busIds.length; i++) {
+      final hue = (i * 137) % 360; // golden angle step for distinct hues
+      final color =
+          HSLColor.fromAHSL(1.0, hue.toDouble(), 0.65, 0.55).toColor();
+      busColors[busIds[i]] = color;
+    }
+  }
+
+  void _loadBusColors(Map<String, dynamic>? data) {
+    busColors.clear();
+    if (data == null) return;
+    final stored = data[_busColorsKey];
+    if (stored is Map) {
+      for (final entry in stored.entries) {
+        final key = int.tryParse(entry.key.toString());
+        final val = entry.value is int
+            ? entry.value as int
+            : int.tryParse(entry.value.toString() ?? '');
+        if (key != null && val != null) {
+          busColors[key] = Color(val);
+        }
+      }
+    }
+  }
+
+  Map<String, int> _busColorsToMap() {
+    return busColors.map((k, v) => MapEntry(k.toString(), v.value));
+  }
+
+  Future<void> _generateBusIcons() async {
+    busIcons.clear();
+
+    final base = Marker(
+      markerId: const MarkerId('tmp'),
+      position: const LatLng(0, 0),
+    );
+
+    for (final entry in busColors.entries) {
+      final color = entry.value;
+
+      final marker = await GoogleMapsCustomMarker.createCustomMarker(
+        marker: base,
+        shape: MarkerShape.pin,
+        backgroundColor: color,
+      );
+
+      busIcons[entry.key] = marker.icon;
     }
   }
 
@@ -448,19 +539,21 @@ class _GoogleMapsState extends State<GoogleMaps> {
         widget.phaseType != Phase.phaseThree) {
       final center = _savedCenter ?? const LatLng(30.622405, -96.353055);
 
-      final nextId = (stops.isEmpty)
-          ? 1
-          : (stops.map((s) => s['id'] as int).reduce((a, b) => a > b ? a : b) +
-                1);
-
-      final newStop = {
+      final nextId = _nextMarkerId();
+      final asStudent = selectedMarker == MarkerLabel.student;
+      final newMarker = {
         'id': nextId,
         'pos': {'lat': center.latitude, 'lon': center.longitude},
       };
 
       setState(() {
-        stops.add(newStop);
+        if (asStudent) {
+          students.add(newMarker);
+        } else {
+          stops.add(newMarker);
+        }
         buildMarkers(stops, MarkerType.stop);
+        buildMarkers(students, MarkerType.student);
       });
     }
 
@@ -485,15 +578,19 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
         case Phase.phaseTwo:
           data['stops'] = stops;
+          data['students'] = students;
           data['assignments'] = assignments;
           data.remove('routes');
           data.remove('evals');
+          data[_busColorsKey] = _busColorsToMap();
           break;
 
         case Phase.phaseThree:
           data['stops'] = stops;
+          data['students'] = students;
           data['assignments'] = assignments;
           data['routes'] = routes;
+          data[_busColorsKey] = _busColorsToMap();
           break;
 
         case null:
@@ -525,19 +622,24 @@ class _GoogleMapsState extends State<GoogleMaps> {
           data.remove('evals');
           data.remove('assignments');
           data.remove('routes');
+          data.remove(_busColorsKey);
           break;
 
         case Phase.phaseTwo:
           data['stops'] = stops;
+          data['students'] = students;
           data['assignments'] = assignments;
           data.remove('evals');
           data.remove('routes');
+          data[_busColorsKey] = _busColorsToMap();
           break;
 
         case Phase.phaseThree:
           data['stops'] = stops;
+          data['students'] = students;
           data['assignments'] = assignments;
           data['routes'] = routes;
+          data[_busColorsKey] = _busColorsToMap();
           break;
 
         case null:
@@ -552,6 +654,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
       students = refreshed?['students'] ?? [];
       assignments = refreshed?['assignments'] ?? [];
       routes = refreshed?['routes'] ?? [];
+      _loadBusColors(refreshed);
+      _assignBusColors();
+      _generateBusIcons();
 
       _markers.clear();
 
@@ -568,10 +673,14 @@ class _GoogleMapsState extends State<GoogleMaps> {
       }
       // Phase 2 setup
       else if (newPhase == Phase.phaseTwo) {
+        _assignBusColors();
+        _generateBusIcons();
         buildMarkers(stops, MarkerType.stop);
       }
       // Phase 3 setup
       else if (newPhase == Phase.phaseThree) {
+        _assignBusColors();
+        _generateBusIcons();
         buildMarkers(stops, MarkerType.stop);
         buildPolylines();
       }
@@ -694,20 +803,63 @@ class _GoogleMapsState extends State<GoogleMaps> {
                             onSelected: widget.phaseType == Phase.phaseThree
                                 ? null
                                 : (MarkerLabel? m) {
+                                    if (m == null) return;
+                                    if ((m == MarkerLabel.stop &&
+                                            markerType == 'stop') ||
+                                        (m == MarkerLabel.student &&
+                                            markerType == 'student')) {
+                                      return;
+                                    }
+
                                     setState(() {
                                       selectedMarker = m;
-                                      if (selectedMarker?.label == 'Bus Stop') {
-                                        _markers['${markerType}_$touchedMarkerId'] =
-                                            _markers['${markerType}_$touchedMarkerId']!
-                                                .copyWith(iconParam: stopIcon);
+                                      // Move the touched marker between lists
+                                      if (m == MarkerLabel.stop) {
+                                        final stu = students.firstWhere(
+                                          (s) => s['id'] == touchedMarkerId,
+                                          orElse: () => null,
+                                        );
+                                        if (stu != null) {
+                                          students.remove(stu);
+                                          stops.add({
+                                            'id': stu['id'],
+                                            'pos': {
+                                              'lat': stu['pos']['lat'],
+                                              'lon': stu['pos']['lon'],
+                                            },
+                                          });
+                                        }
+                                        markerType = 'stop';
+                                      } else {
+                                        final stp = stops.firstWhere(
+                                          (s) => s['id'] == touchedMarkerId,
+                                          orElse: () => null,
+                                        );
+                                        if (stp != null) {
+                                          // remove from assignments if it was a stop
+                                          for (final a in assignments) {
+                                            final list = List<int>.from(
+                                                a['stops'] ?? []);
+                                            list.remove(touchedMarkerId);
+                                            a['stops'] = list;
+                                          }
+                                          stops.remove(stp);
+                                          students.add({
+                                            'id': stp['id'],
+                                            'pos': {
+                                              'lat': stp['pos']['lat'],
+                                              'lon': stp['pos']['lon'],
+                                            },
+                                          });
+                                        }
+                                        markerType = 'student';
                                       }
-                                      if (selectedMarker?.label == 'Student') {
-                                        _markers['${markerType}_$touchedMarkerId'] =
-                                            _markers['${markerType}_$touchedMarkerId']!
-                                                .copyWith(
-                                                  iconParam: studentIcon,
-                                                );
-                                      }
+
+                                      _assignBusColors();
+                                      _generateBusIcons();
+                                      _markers.clear();
+                                      buildMarkers(stops, MarkerType.stop);
+                                      buildMarkers(students, MarkerType.student);
                                     });
                                   },
                             dropdownMenuEntries: MarkerLabel.entries,
@@ -730,6 +882,12 @@ class _GoogleMapsState extends State<GoogleMaps> {
                               students.removeWhere(
                                 (student) => student['id'] == touchedMarkerId,
                               );
+                              for (final a in assignments) {
+                                final list =
+                                    List<int>.from(a['stops'] ?? []);
+                                list.remove(touchedMarkerId);
+                                a['stops'] = list;
+                              }
 
                               _markers.remove('${markerType}_$touchedMarkerId');
 
@@ -900,7 +1058,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                     Color.fromARGB(117, 255, 255, 255),
                                   ),
                             ),
-                            onPressed: () {
+                            onPressed: () async {
                               final busNum =
                                   int.tryParse(busController.text) ?? 0;
 
@@ -973,6 +1131,12 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
                               setState(() {
                                 isEditingBus = false;
+                              });
+                              _assignBusColors();
+                              await _generateBusIcons();
+                              setState(() {
+                                _markers.clear();
+                                buildMarkers(stops, MarkerType.stop);
                               });
                             },
                             child: Text(
