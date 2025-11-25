@@ -68,6 +68,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
   late BitmapDescriptor studentIcon;
   MarkerLabel? selectedMarker = MarkerLabel.stop;
 
+
   Future<void> initIcon() async {
     final base = Marker(
       markerId: const MarkerId('tmp'),
@@ -458,3 +459,5 @@ class _GoogleMapsState extends State<GoogleMaps> {
     );
   }
 }
+
+typedef GoogleMapsState = _GoogleMapsState;
