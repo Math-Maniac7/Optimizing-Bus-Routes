@@ -762,3 +762,5 @@ class _GoogleMapsState extends State<GoogleMaps> {
     );
   }
 }
+
+typedef GoogleMapsState = _GoogleMapsState;
