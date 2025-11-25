@@ -212,6 +212,99 @@ class _GoogleMapsState extends State<GoogleMaps> {
     return ids.reduce((a, b) => a > b ? a : b) + 1;
   }
 
+  double _haversine(LatLng a, LatLng b) {
+    const double earthRadiusMeters = 6371000.0;
+    double toRad(double deg) => deg * pi / 180.0;
+
+    final dLat = toRad(b.latitude - a.latitude);
+    final dLon = toRad(b.longitude - a.longitude);
+    final lat1 = toRad(a.latitude);
+    final lat2 = toRad(b.latitude);
+
+    final h = pow(sin(dLat / 2), 2) +
+        cos(lat1) * cos(lat2) * pow(sin(dLon / 2), 2);
+    final c = 2 * atan2(sqrt(h), sqrt(1 - h));
+    return earthRadiusMeters * c;
+  }
+
+  void _assignStudentToNearestStop(int studentId, LatLng studentPos) {
+    if (stops.isEmpty) return;
+
+    int? nearestIdx;
+    double bestDist = double.infinity;
+
+    for (int i = 0; i < stops.length; i++) {
+      final stop = stops[i];
+      final stopLat = (stop['pos']?['lat'] as num?)?.toDouble();
+      final stopLon = (stop['pos']?['lon'] as num?)?.toDouble();
+      if (stopLat == null || stopLon == null) continue;
+
+      final dist = _haversine(studentPos, LatLng(stopLat, stopLon));
+      if (dist < bestDist) {
+        bestDist = dist;
+        nearestIdx = i;
+      }
+    }
+
+    if (nearestIdx == null) return;
+
+    final stop = stops[nearestIdx];
+    final stopStudents = List<int>.from((stop['students'] as List?) ?? []);
+    if (!stopStudents.contains(studentId)) {
+      stopStudents.add(studentId);
+      stop['students'] = stopStudents;
+    }
+  }
+
+  LatLng? _stopPosition(Map<String, dynamic> stop) {
+    final lat = (stop['pos']?['lat'] as num?)?.toDouble();
+    final lon = (stop['pos']?['lon'] as num?)?.toDouble();
+    if (lat == null || lon == null) return null;
+    return LatLng(lat, lon);
+  }
+
+  void _assignStopToBus(int stopId, LatLng stopPos) {
+    if (assignments.isEmpty) return;
+
+    // Pick the bus for the geographically closest already-assigned stop.
+    int? nearestBus;
+    double best = double.infinity;
+    for (final s in stops) {
+      final sid = s['id'] as int;
+      final bus = busForStop(sid);
+      if (bus == null) continue;
+      final pos = _stopPosition(s);
+      if (pos == null) continue;
+      final d = _haversine(stopPos, pos);
+      if (d < best) {
+        best = d;
+        nearestBus = bus;
+      }
+    }
+
+    // If nothing was found, fall back to the first assignment's bus.
+    nearestBus ??= (assignments.first['bus'] as int?);
+    if (nearestBus == null) return;
+
+    // Append the stop to that bus's assignment list.
+    for (final a in assignments) {
+      if (a['bus'] == nearestBus) {
+        final list = List<int>.from(a['stops'] ?? []);
+        if (!list.contains(stopId)) {
+          list.add(stopId);
+          a['stops'] = list;
+        }
+        break;
+      }
+    }
+
+    // Mark the stop with the bus id for icon coloring.
+    final stop = stops.firstWhere((s) => s['id'] == stopId, orElse: () => null);
+    if (stop != null) {
+      stop['bus'] = nearestBus;
+    }
+  }
+
   Future<void> _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
 
@@ -544,13 +637,18 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final newMarker = {
         'id': nextId,
         'pos': {'lat': center.latitude, 'lon': center.longitude},
+        if (!asStudent) 'students': <int>[],
       };
 
       setState(() {
         if (asStudent) {
           students.add(newMarker);
+          _assignStudentToNearestStop(nextId, center);
         } else {
           stops.add(newMarker);
+          if (widget.phaseType == Phase.phaseTwo) {
+            _assignStopToBus(nextId, center);
+          }
         }
         buildMarkers(stops, MarkerType.stop);
         buildMarkers(students, MarkerType.student);
@@ -827,6 +925,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                               'lat': stu['pos']['lat'],
                                               'lon': stu['pos']['lon'],
                                             },
+                                            'students': <int>[],
                                           });
                                         }
                                         markerType = 'stop';
