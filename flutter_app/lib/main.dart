@@ -5,6 +5,7 @@ import 'pages/home_page.dart';
 import 'pages/route_page.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'firebase_storage_options.dart';
 
 Future<void> main() async {
   //Test to make sure interop works
@@ -42,7 +43,19 @@ Future<void> main() async {
 
   //Actual calls
   WidgetsFlutterBinding.ensureInitialized(); // Core idea: prepare bindings for async init
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Initialize the OAuth Firebase app (default - route-optimization-474616)
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+    name: '[DEFAULT]', // This is the default app for OAuth
+  );
+  
+  // Initialize the storage Firebase app (bus-mobile-app-4bebd) for Firestore
+  await Firebase.initializeApp(
+    options: FirebaseStorageOptions.currentPlatform,
+    name: 'storage',
+  );
+  
   runApp(const MyApp());
 }
 
