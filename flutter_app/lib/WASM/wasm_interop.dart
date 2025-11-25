@@ -14,7 +14,7 @@ Future<String> phase_1(String input) async {
   final jsonOut = module.callMethod('_malloc', [4]); // char**
 
   // Call C++ function
-  final outptr = module.callMethod('__Z5do_p1PcPS_', [inptr, jsonOut]);
+  module.callMethod('__Z5do_p1PcPS_', [inptr, jsonOut]);
 
   //The C++ function uses emscripten_sleep to handle async processing while returning control to the main loop
   //This causes problems for us because it means that this function resumes once we hit sleep, and while the api fetch
@@ -29,7 +29,6 @@ Future<String> phase_1(String input) async {
     if (DateTime.now().difference(startTime) > _maxWaitTime) {
       // Free input pointer before throwing
       module.callMethod('_free', [inptr]);
-      module.callMethod('_free', [outptr]);
       module.callMethod('_free', [jsonOut]);
       throw TimeoutException(
         'Route generation timed out after ${_maxWaitTime.inMinutes} minutes. '
@@ -44,9 +43,13 @@ Future<String> phase_1(String input) async {
   module.callMethod('_free', [inptr]);
 
   String output;
+  final resultPtr = module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut]);
   try {
     // Convert output pointer to Dart string
-    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    if (resultPtr == 0) {
+      throw Exception('WASM Error: empty result pointer');
+    }
+    output = module.callMethod('UTF8ToString', [resultPtr]);
     
     // Check if output is an error message
     if (output.startsWith('error ') || output.contains('ERROR') || output.contains('Overpass HTTP')) {
@@ -54,8 +57,7 @@ Future<String> phase_1(String input) async {
     }
   } finally {
     // Free output pointers to avoid memory leak
-    module.callMethod('_free', [outptr]);
-    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    module.callMethod('_free', [resultPtr]);
     module.callMethod('_free', [jsonOut]);
   }
 
@@ -70,7 +72,7 @@ Future<String> phase_2(String input) async {
   final jsonOut = module.callMethod('_malloc', [4]); // char**
 
   // Call C++ function
-  final outptr = module.callMethod('__Z5do_p2PcPS_', [inptr, jsonOut]);
+  module.callMethod('__Z5do_p2PcPS_', [inptr, jsonOut]);
 
   //The C++ function uses emscripten_sleep to handle async processing while returning control to the main loop
   final startTime = DateTime.now();
@@ -79,7 +81,6 @@ Future<String> phase_2(String input) async {
     if (DateTime.now().difference(startTime) > _maxWaitTime) {
       // Free input pointer before throwing
       module.callMethod('_free', [inptr]);
-      module.callMethod('_free', [outptr]);
       module.callMethod('_free', [jsonOut]);
       throw TimeoutException(
         'Route generation timed out after ${_maxWaitTime.inMinutes} minutes. '
@@ -94,9 +95,13 @@ Future<String> phase_2(String input) async {
   module.callMethod('_free', [inptr]);
 
   String output;
+  final resultPtr = module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut]);
   try {
     // Convert output pointer to Dart string
-    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    if (resultPtr == 0) {
+      throw Exception('WASM Error: empty result pointer');
+    }
+    output = module.callMethod('UTF8ToString', [resultPtr]);
     
     // Check if output is an error message
     if (output.startsWith('error ') || output.contains('ERROR') || output.contains('Overpass HTTP')) {
@@ -104,8 +109,7 @@ Future<String> phase_2(String input) async {
     }
   } finally {
     // Free output pointers to avoid memory leak
-    module.callMethod('_free', [outptr]);
-    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    module.callMethod('_free', [resultPtr]);
     module.callMethod('_free', [jsonOut]);
   }
 
@@ -120,7 +124,7 @@ Future<String> phase_3(String input) async {
   final jsonOut = module.callMethod('_malloc', [4]); // char**
 
   // Call C++ function
-  final outptr = module.callMethod('__Z5do_p3PcPS_', [inptr, jsonOut]);
+  module.callMethod('__Z5do_p3PcPS_', [inptr, jsonOut]);
 
   //The C++ function uses emscripten_sleep to handle async processing while returning control to the main loop
   final startTime = DateTime.now();
@@ -129,7 +133,6 @@ Future<String> phase_3(String input) async {
     if (DateTime.now().difference(startTime) > _maxWaitTime) {
       // Free input pointer before throwing
       module.callMethod('_free', [inptr]);
-      module.callMethod('_free', [outptr]);
       module.callMethod('_free', [jsonOut]);
       throw TimeoutException(
         'Route generation timed out after ${_maxWaitTime.inMinutes} minutes. '
@@ -144,9 +147,13 @@ Future<String> phase_3(String input) async {
   module.callMethod('_free', [inptr]);
 
   String output;
+  final resultPtr = module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut]);
   try {
     // Convert output pointer to Dart string
-    output = module.callMethod('UTF8ToString', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    if (resultPtr == 0) {
+      throw Exception('WASM Error: empty result pointer');
+    }
+    output = module.callMethod('UTF8ToString', [resultPtr]);
     
     // Check if output is an error message
     if (output.startsWith('error ') || output.contains('ERROR') || output.contains('Overpass HTTP')) {
@@ -154,8 +161,7 @@ Future<String> phase_3(String input) async {
     }
   } finally {
     // Free output pointers to avoid memory leak
-    module.callMethod('_free', [outptr]);
-    module.callMethod('_free', [module.callMethod('__Z20json_out_to_C_stringPPc', [jsonOut])]);
+    module.callMethod('_free', [resultPtr]);
     module.callMethod('_free', [jsonOut]);
   }
 
