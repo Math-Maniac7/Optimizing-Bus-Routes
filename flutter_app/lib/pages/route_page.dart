@@ -353,6 +353,7 @@ LatLng? getCoordinatesForLabel(String label) {
                                     isSaved: _saveMarkers,
                                     cancelModify: _cancelModify,
                                     addMarker: _addMarker,
+                                    isGenerating: _isGeneratingRoutes,
                                     interactionEnabled: !_isDrawerOpen,
                                     phaseType: selectedPhase,
                                   ),
