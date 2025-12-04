@@ -93,6 +93,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   final busController = TextEditingController();
   bool isEditingBus = false;
+  int? selectedBusOption;
 
   late bool isSaved;
   late bool cancelModify;
@@ -138,6 +139,29 @@ class _GoogleMapsState extends State<GoogleMaps> {
     );
 
     studentIcon = studentMarker.icon;
+  }
+
+  Color? _colorForStop(int stopId) {
+    final busId = busForStop(stopId);
+    if (busId == null) return null;
+    return busColors[busId];
+  }
+
+  int? _busForStudent(int studentId) {
+    final stopId = _stopForStudent(studentId);
+    if (stopId == null) return null;
+    return busForStop(stopId);
+  }
+
+  BitmapDescriptor _studentIconForId(int studentId) {
+    final stopId = _stopForStudent(studentId);
+    if (stopId != null) {
+      final busId = busForStop(stopId);
+      if (busId != null) {
+        return routeIcons[busId] ?? busIcons[busId] ?? studentIcon;
+      }
+    }
+    return studentIcon;
   }
 
   void _fitToMarkers() async {
@@ -221,8 +245,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
     final lat1 = toRad(a.latitude);
     final lat2 = toRad(b.latitude);
 
-    final h = pow(sin(dLat / 2), 2) +
-        cos(lat1) * cos(lat2) * pow(sin(dLon / 2), 2);
+    final h =
+        pow(sin(dLat / 2), 2) + cos(lat1) * cos(lat2) * pow(sin(dLon / 2), 2);
     final c = 2 * atan2(sqrt(h), sqrt(1 - h));
     return earthRadiusMeters * c;
   }
@@ -253,6 +277,82 @@ class _GoogleMapsState extends State<GoogleMaps> {
     if (!stopStudents.contains(studentId)) {
       stopStudents.add(studentId);
       stop['students'] = stopStudents;
+    }
+
+    final student = students.firstWhere(
+      (s) => s['id'] == studentId,
+      orElse: () => null,
+    );
+    if (student != null) {
+      if (stop['bus'] != null) {
+        student['bus'] = stop['bus'];
+      } else {
+        student.remove('bus');
+      }
+    }
+  }
+
+  int? _stopForStudent(int studentId) {
+    for (final stop in stops) {
+      final stopStudents = stop['students'] as List?;
+      if (stopStudents != null && stopStudents.contains(studentId)) {
+        return stop['id'] as int;
+      }
+    }
+    return null;
+  }
+
+  void _removeStudentFromStops(int studentId) {
+    for (final stop in stops) {
+      final stopStudents = List<int>.from((stop['students'] as List?) ?? []);
+      if (stopStudents.remove(studentId)) {
+        stop['students'] = stopStudents;
+      }
+    }
+  }
+
+  void _reassignStudentToNearestStop(int studentId, LatLng studentPos) {
+    if (stops.isEmpty) {
+      final student = students.firstWhere(
+        (s) => s['id'] == studentId,
+        orElse: () => null,
+      );
+      student?.remove('bus');
+      return;
+    }
+
+    final student = students.firstWhere(
+      (s) => s['id'] == studentId,
+      orElse: () => null,
+    );
+    student?.remove('bus');
+
+    _removeStudentFromStops(studentId);
+    _assignStudentToNearestStop(studentId, studentPos);
+  }
+
+  void _assignStudentToStopById(int studentId, int stopId) {
+    final stop = stops.firstWhere((s) => s['id'] == stopId, orElse: () => null);
+    if (stop == null) return;
+
+    _removeStudentFromStops(studentId);
+
+    final stopStudents = List<int>.from((stop['students'] as List?) ?? []);
+    if (!stopStudents.contains(studentId)) {
+      stopStudents.add(studentId);
+      stop['students'] = stopStudents;
+    }
+
+    final student = students.firstWhere(
+      (s) => s['id'] == studentId,
+      orElse: () => null,
+    );
+    if (student != null) {
+      if (stop['bus'] != null) {
+        student['bus'] = stop['bus'];
+      } else {
+        student.remove('bus');
+      }
     }
   }
 
@@ -380,13 +480,11 @@ class _GoogleMapsState extends State<GoogleMaps> {
           if (flag == MarkerType.stop) {
             final busId = busForStop(currentId);
             if (busId != null) {
-              return routeIcons[busId] ??
-                  busIcons[busId] ??
-                  stopIcon;
+              return routeIcons[busId] ?? busIcons[busId] ?? stopIcon;
             }
             return stopIcon;
           }
-          return studentIcon;
+          return _studentIconForId(currentId);
         }(),
         onDragStart: widget.phaseType == Phase.phaseThree
             ? null
@@ -413,10 +511,13 @@ class _GoogleMapsState extends State<GoogleMaps> {
                     ),
                     iconParam: (flag == MarkerType.stop)
                         ? stopIcon
-                        : studentIcon,
+                        : _studentIconForId(currentId),
                   );
                   m['pos']['lat'] = position.latitude;
                   m['pos']['lon'] = position.longitude;
+                  if (flag == MarkerType.student) {
+                    _reassignStudentToNearestStop(currentId, position);
+                  }
                 });
               },
       );
@@ -449,7 +550,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
       final bus = r['assignment'] as int;
       final paths = r['paths'] as List;
 
-      final randColor = busColors[bus] ??
+      final randColor =
+          busColors[bus] ??
           Color.fromARGB(
             255,
             Random().nextInt(200),
@@ -515,18 +617,23 @@ class _GoogleMapsState extends State<GoogleMaps> {
 
   void _assignBusColors() {
     busColors.clear();
-    final busIds = assignments
-        .map((a) => a['bus'])
-        .where((id) => id != null)
-        .cast<int>()
-        .toSet()
-        .toList()
-      ..sort();
+    final busIds =
+        assignments
+            .map((a) => a['bus'])
+            .where((id) => id != null)
+            .cast<int>()
+            .toSet()
+            .toList()
+          ..sort();
 
     for (var i = 0; i < busIds.length; i++) {
       final hue = (i * 137) % 360; // golden angle step for distinct hues
-      final color =
-          HSLColor.fromAHSL(1.0, hue.toDouble(), 0.65, 0.55).toColor();
+      final color = HSLColor.fromAHSL(
+        1.0,
+        hue.toDouble(),
+        0.65,
+        0.55,
+      ).toColor();
       busColors[busIds[i]] = color;
     }
   }
@@ -810,13 +917,31 @@ class _GoogleMapsState extends State<GoogleMaps> {
     final markerNumber = touchedMarkerId + 1;
 
     int busAssignment = 0;
-    if (markerInfo) {
+    if (markerInfo && markerType == 'stop') {
       for (final a in assignments) {
-        if (a['stops'].contains(touchedMarkerId)) {
-          busAssignment = a['bus'] + 1;
+        final stopsList = a['stops'] as List?;
+        final busId = a['bus'] as int?;
+        if (stopsList != null &&
+            busId != null &&
+            stopsList.contains(touchedMarkerId)) {
+          busAssignment = busId + 1;
         }
       }
     }
+    int busAssignmentIndex = -1;
+    if (busAssignment > 0) {
+      busAssignmentIndex = assignments.indexWhere(
+        (a) => a['bus'] == busAssignment - 1,
+      );
+    }
+
+    int? studentStopAssignment;
+    if (markerInfo && markerType == 'student') {
+      studentStopAssignment = _stopForStudent(touchedMarkerId);
+    }
+    final studentBusAssignment = markerInfo && markerType == 'student'
+        ? _busForStudent(touchedMarkerId)
+        : null;
 
     return Stack(
       children: [
@@ -938,7 +1063,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                           // remove from assignments if it was a stop
                                           for (final a in assignments) {
                                             final list = List<int>.from(
-                                                a['stops'] ?? []);
+                                              a['stops'] ?? [],
+                                            );
                                             list.remove(touchedMarkerId);
                                             a['stops'] = list;
                                           }
@@ -958,7 +1084,10 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                       _generateBusIcons();
                                       _markers.clear();
                                       buildMarkers(stops, MarkerType.stop);
-                                      buildMarkers(students, MarkerType.student);
+                                      buildMarkers(
+                                        students,
+                                        MarkerType.student,
+                                      );
                                     });
                                   },
                             dropdownMenuEntries: MarkerLabel.entries,
@@ -975,6 +1104,20 @@ class _GoogleMapsState extends State<GoogleMaps> {
                         IconButton(
                           onPressed: () {
                             setState(() {
+                              List<int> orphanedStudents = [];
+                              if (markerType == 'stop') {
+                                final removedStop = stops.firstWhere(
+                                  (s) => s['id'] == touchedMarkerId,
+                                  orElse: () => null,
+                                );
+                                if (removedStop != null) {
+                                  orphanedStudents = List<int>.from(
+                                    (removedStop['students'] as List?) ?? [],
+                                  );
+                                }
+                              }
+
+                              _removeStudentFromStops(touchedMarkerId);
                               stops.removeWhere(
                                 (stop) => stop['id'] == touchedMarkerId,
                               );
@@ -982,13 +1125,32 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                 (student) => student['id'] == touchedMarkerId,
                               );
                               for (final a in assignments) {
-                                final list =
-                                    List<int>.from(a['stops'] ?? []);
+                                final list = List<int>.from(a['stops'] ?? []);
                                 list.remove(touchedMarkerId);
                                 a['stops'] = list;
                               }
 
                               _markers.remove('${markerType}_$touchedMarkerId');
+
+                              if (markerType == 'stop' &&
+                                  orphanedStudents.isNotEmpty) {
+                                for (final studentId in orphanedStudents) {
+                                  final student = students.firstWhere(
+                                    (s) => s['id'] == studentId,
+                                    orElse: () => null,
+                                  );
+                                  if (student != null) {
+                                    final lat = (student['pos']['lat'] as num)
+                                        .toDouble();
+                                    final lon = (student['pos']['lon'] as num)
+                                        .toDouble();
+                                    _reassignStudentToNearestStop(
+                                      studentId,
+                                      LatLng(lat, lon),
+                                    );
+                                  }
+                                }
+                              }
 
                               buildMarkers(stops, MarkerType.stop);
                               buildMarkers(students, MarkerType.student);
@@ -1004,7 +1166,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                   SizedBox(height: screenHeight * 0.02),
 
                   // Bus assignment display + edit field
-                  if (phaseType != Phase.phaseOne)
+                  if (phaseType != Phase.phaseOne && markerType == 'stop')
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1029,26 +1191,129 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                 ),
                               ),
                               SizedBox(width: screenWidth * 0.01),
-                              SizedBox(
-                                width: screenWidth * 0.03,
-                                child: TextField(
-                                  controller: busController,
-                                  style: GoogleFonts.quicksand(
-                                    fontSize: 20,
-                                    color: const Color.fromRGBO(
-                                      57,
-                                      103,
-                                      136,
-                                      1,
-                                    ),
+                              DropdownMenu<int>(
+                                width: screenWidth * 0.06,
+                                initialSelection: selectedBusOption,
+                                onSelected: (val) {
+                                  setState(() {
+                                    selectedBusOption = val;
+                                  });
+                                },
+                                dropdownMenuEntries: assignments
+                                    .map<DropdownMenuEntry<int>>((a) {
+                                      final busId = (a['bus'] as int?) ?? 0;
+                                      return DropdownMenuEntry<int>(
+                                        value: busId + 1,
+                                        label: 'Bus ${busId + 1}',
+                                      );
+                                    })
+                                    .toList(),
+                                inputDecorationTheme: InputDecorationTheme(
+                                  fillColor: Colors.white,
+                                  filled: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
                                   ),
-                                  decoration: const InputDecoration(
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
                                 ),
                               ),
                             ],
+                          ),
+                      ],
+                    ),
+
+                  SizedBox(height: screenHeight * 0.02),
+
+                  if (markerType == 'student' &&
+                      widget.phaseType != Phase.phaseThree)
+                    Column(
+                      children: [
+                        Center(
+                          child: Text(
+                            'Assigned Stop',
+                            style: GoogleFonts.quicksand(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: const Color.fromRGBO(57, 103, 136, 1),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: screenHeight * 0.01),
+                        Center(
+                          child: DropdownMenu<int>(
+                            width: screenWidth * .1,
+                            initialSelection: studentStopAssignment,
+                            requestFocusOnTap: false,
+                            dropdownMenuEntries: stops
+                                .map<DropdownMenuEntry<int>>(
+                                  (s) => DropdownMenuEntry(
+                                    value: s['id'] as int,
+                                    label: 'Stop ${(s['id'] as int) + 1}',
+                                  ),
+                                )
+                                .toList(),
+                            onSelected: widget.isModified
+                                ? (int? stopId) {
+                                    if (stopId == null) return;
+                                    setState(() {
+                                      _assignStudentToStopById(
+                                        touchedMarkerId,
+                                        stopId,
+                                      );
+                                      _markers.clear();
+                                      buildMarkers(stops, MarkerType.stop);
+                                      buildMarkers(
+                                        students,
+                                        MarkerType.student,
+                                      );
+                                    });
+                                  }
+                                : null,
+                            inputDecorationTheme: InputDecorationTheme(
+                              fillColor: Colors.white,
+                              filled: true,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: screenHeight * 0.015),
+                        if (studentStopAssignment != null)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color:
+                                      _colorForStop(studentStopAssignment) ??
+                                      const Color.fromRGBO(57, 103, 136, 1),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              SizedBox(width: screenWidth * 0.008),
+                              Text(
+                                'Stop ${studentStopAssignment + 1}'
+                                '${studentBusAssignment != null ? ' (Bus ${studentBusAssignment + 1})' : ''}',
+                                style: GoogleFonts.quicksand(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color.fromRGBO(57, 103, 136, 1),
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          Text(
+                            'No stop assigned',
+                            style: GoogleFonts.quicksand(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.red.shade400,
+                            ),
                           ),
                       ],
                     ),
@@ -1071,7 +1336,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                   // Phase 3 route list
                   if (phaseType == Phase.phaseThree &&
                       busAssignment > 0 &&
-                      busAssignment - 1 < assignments.length)
+                      busAssignmentIndex >= 0)
                     Center(
                       child: Container(
                         height: screenHeight * 0.2,
@@ -1086,7 +1351,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                             scrollDirection: Axis.vertical,
                             children: [
                               for (final stopId in List<int>.from(
-                                assignments[busAssignment - 1]['stops'] ?? [],
+                                assignments[busAssignmentIndex]['stops'] ?? [],
                               ))
                                 Center(
                                   child: ClipRRect(
@@ -1105,7 +1370,7 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                         1,
                                       ),
                                       child: Text(
-                                        "Stop $stopId",
+                                        "Stop ${stopId + 1}",
                                         style: GoogleFonts.quicksand(
                                           fontSize: 25,
                                           color: Colors.white,
@@ -1123,7 +1388,8 @@ class _GoogleMapsState extends State<GoogleMaps> {
                   SizedBox(height: screenHeight * 0.02),
 
                   // Phase 2 bus editing
-                  if (widget.phaseType == Phase.phaseTwo)
+                  if (widget.phaseType == Phase.phaseTwo &&
+                      markerType == 'stop')
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1137,6 +1403,14 @@ class _GoogleMapsState extends State<GoogleMaps> {
                             ),
                             onPressed: () {
                               setState(() {
+                                selectedBusOption = busAssignment > 0
+                                    ? busAssignment
+                                    : (assignments.isNotEmpty
+                                          ? ((assignments.first['bus']
+                                                        as int?) ??
+                                                    0) +
+                                                1
+                                          : null);
                                 isEditingBus = true;
                               });
                             },
@@ -1158,10 +1432,16 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                   ),
                             ),
                             onPressed: () async {
-                              final busNum =
-                                  int.tryParse(busController.text) ?? 0;
+                              final busNum = selectedBusOption;
 
-                              if (busNum < 1 || busNum > assignments.length) {
+                              final targetBusId = (busNum ?? 1) - 1;
+                              final targetIndex = assignments.indexWhere(
+                                (a) => (a['bus'] as int?) == targetBusId,
+                              );
+
+                              if (busNum == null ||
+                                  busNum < 1 ||
+                                  targetIndex == -1) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Center(
@@ -1173,8 +1453,6 @@ class _GoogleMapsState extends State<GoogleMaps> {
                                 );
                                 return;
                               }
-
-                              final targetIndex = busNum - 1;
 
                               // remove from old assignment
                               int? currentIndex;
@@ -1219,23 +1497,26 @@ class _GoogleMapsState extends State<GoogleMaps> {
                               );
                               if (stop == null) return;
 
-                              stop['bus'] = targetIndex;
+                              stop['bus'] = assignments[targetIndex]['bus'];
 
-                              for (final stuId in stop['students']) {
+                              for (final stuId
+                                  in (stop['students'] as List? ?? [])) {
                                 final stu = students.firstWhere(
                                   (s) => s['id'] == stuId,
                                 );
-                                stu['bus'] = targetIndex;
+                                stu['bus'] = assignments[targetIndex]['bus'];
                               }
 
                               setState(() {
                                 isEditingBus = false;
+                                selectedBusOption = null;
                               });
                               _assignBusColors();
                               await _generateBusIcons();
                               setState(() {
                                 _markers.clear();
                                 buildMarkers(stops, MarkerType.stop);
+                                buildMarkers(students, MarkerType.student);
                               });
                             },
                             child: Text(

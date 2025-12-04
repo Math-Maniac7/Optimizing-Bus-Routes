@@ -64,6 +64,349 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
   Completer<void>? _routeGenerationCompleter;
 
+  static const _phase1SignatureKey = 'phase1Signature';
+
+  String _computePhase1Signature(Map<String, dynamic> data) {
+    final payload = {'stops': data['stops'], 'students': data['students']};
+    return jsonEncode(payload).hashCode.toString();
+  }
+
+  void _writePhase1Signature(Map<String, dynamic> data) {
+    data[_phase1SignatureKey] = _computePhase1Signature(data);
+  }
+
+  bool _phase1IsDirty(Map<String, dynamic> data) {
+    final stored = data[_phase1SignatureKey];
+    if (stored is! String) return true; // treat missing signature as dirty
+    final current = _computePhase1Signature(data);
+    return current != stored;
+  }
+
+  bool _validatePhase2Input(Map<String, dynamic> data) {
+    final stops = data['stops'] as List<dynamic>?;
+    final students = data['students'] as List<dynamic>?;
+
+    if (stops == null || stops.isEmpty) {
+      _showMessage(
+        'Phase 2 requires stops from Phase 1. Please run Phase 1 first.',
+        isError: true,
+      );
+      return false;
+    }
+
+    // Ensure IDs are unique and valid
+    final stopIds = <int>{};
+    for (final stop in stops) {
+      final id = (stop as Map)['id'] as int?;
+      if (id == null || stopIds.contains(id)) {
+        _showMessage(
+          'Stop IDs are missing or duplicated. Please rerun Phase 1.',
+          isError: true,
+        );
+        return false;
+      }
+      stopIds.add(id);
+    }
+
+    for (final stop in stops) {
+      final pos = (stop as Map)['pos'] as Map?;
+      final lat = (pos?['lat'] as num?)?.toDouble();
+      final lon = (pos?['lon'] as num?)?.toDouble();
+      if (lat == null || lon == null) {
+        _showMessage(
+          'Found a stop without valid coordinates. Please rerun Phase 1.',
+          isError: true,
+        );
+        return false;
+      }
+    }
+
+    final studentIds = <int>{};
+    if (students != null) {
+      for (final student in students) {
+        final id = (student as Map)['id'] as int?;
+        if (id == null || studentIds.contains(id)) {
+          _showMessage(
+            'Student IDs are missing or duplicated. Please rerun Phase 1.',
+            isError: true,
+          );
+          return false;
+        }
+        studentIds.add(id);
+
+        final pos = (student)['pos'] as Map?;
+        final lat = (pos?['lat'] as num?)?.toDouble();
+        final lon = (pos?['lon'] as num?)?.toDouble();
+        if (lat == null || lon == null) {
+          _showMessage(
+            'Found a student without valid coordinates. Please rerun Phase 1.',
+            isError: true,
+          );
+          return false;
+        }
+      }
+    }
+
+    // Ensure stop->students references only existing students and everyone is assigned.
+    final unassignedStudents = <int>{...studentIds};
+    for (final stop in stops) {
+      final list = List<int>.from(((stop as Map)['students'] as List?) ?? []);
+      final filtered = list.where(studentIds.contains).toList();
+      stop['students'] = filtered;
+      for (final sid in filtered) {
+        unassignedStudents.remove(sid);
+      }
+    }
+
+    if (unassignedStudents.isNotEmpty) {
+      _showMessage(
+        'Some students are not assigned to any stop (${unassignedStudents.length}). '
+        'Please assign them to a stop or rerun Phase 1.',
+        isError: true,
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  bool _validatePhase3Input(Map<String, dynamic> data) {
+    final stops = data['stops'] as List<dynamic>?;
+    final assignments = data['assignments'] as List<dynamic>?;
+
+    if (stops == null || stops.isEmpty) {
+      _showMessage(
+        'Phase 3 requires stops from Phase 1. Please generate Phase 1 routes.',
+        isError: true,
+      );
+      return false;
+    }
+    if (assignments == null || assignments.isEmpty) {
+      _showMessage(
+        'Phase 3 requires assignments from Phase 2. Please generate Phase 2 routes.',
+        isError: true,
+      );
+      return false;
+    }
+
+    final stopIds = <int>{};
+    for (final stop in stops) {
+      final id = (stop as Map)['id'] as int?;
+      final pos = (stop)['pos'] as Map?;
+      final lat = (pos?['lat'] as num?)?.toDouble();
+      final lon = (pos?['lon'] as num?)?.toDouble();
+      if (id == null || lat == null || lon == null || lat.isNaN || lon.isNaN) {
+        _showMessage(
+          'Stops contain missing IDs or coordinates. Please rerun Phase 1.',
+          isError: true,
+        );
+        return false;
+      }
+      if (stopIds.contains(id)) {
+        _showMessage(
+          'Duplicate stop IDs detected. Please rerun Phase 1.',
+          isError: true,
+        );
+        return false;
+      }
+      stopIds.add(id);
+    }
+
+    final busIds = <int>{};
+    final seenStops = <int>{};
+    for (final assignment in assignments) {
+      final busId = (assignment as Map)['bus'] as int?;
+      final rawStops = assignment['stops'] as List?;
+      if (busId == null || rawStops == null) {
+        _showMessage(
+          'An assignment is missing a bus ID or stops list. Please rerun Phase 2.',
+          isError: true,
+        );
+        return false;
+      }
+      final stopsList = <int>[];
+      for (final s in rawStops) {
+        final val = (s is num) ? s.toInt() : int.tryParse('$s');
+        if (val != null) stopsList.add(val);
+      }
+      if (stopsList.isEmpty) {
+        _showMessage(
+          'An assignment has no stops. Please rerun Phase 2.',
+          isError: true,
+        );
+        return false;
+      }
+      if (busIds.contains(busId)) {
+        _showMessage(
+          'Duplicate bus IDs in assignments. Please rerun Phase 2.',
+          isError: true,
+        );
+        return false;
+      }
+      busIds.add(busId);
+
+      for (final sid in stopsList) {
+        if (!stopIds.contains(sid)) {
+          _showMessage(
+            'Assignments reference a stop that does not exist (Stop $sid). Please rerun Phase 2.',
+            isError: true,
+          );
+          return false;
+        }
+        if (!seenStops.add(sid)) {
+          _showMessage(
+            'A stop is assigned to multiple buses. Please adjust assignments before Phase 3.',
+            isError: true,
+          );
+          return false;
+        }
+      }
+    }
+
+    final unassignedStops = stopIds.difference(seenStops);
+    if (unassignedStops.isNotEmpty) {
+      _showMessage(
+        'Some stops are not assigned to any bus (${unassignedStops.length}). '
+        'Assign all stops before running Phase 3.',
+        isError: true,
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  /// Clean assignments in-place without changing which bus owns a stop.
+  /// - Coerces bus/stops to ints
+  /// - Removes invalid stops and duplicates per bus
+  /// - Drops buses with no stops
+  bool _cleanAssignmentsForPhase3(Map<String, dynamic> data) {
+    final stops = data['stops'] as List<dynamic>? ?? [];
+    final stopIds = stops
+        .map((s) => (s as Map)['id'])
+        .whereType<num>()
+        .map((n) => n.toInt())
+        .toSet();
+
+    final rawAssignments = data['assignments'] as List<dynamic>? ?? [];
+    final cleaned = <Map<String, dynamic>>[];
+    final seenBuses = <int>{};
+
+    for (final a in rawAssignments) {
+      if (a is! Map) continue;
+      final bus = (a['bus'] is num)
+          ? (a['bus'] as num).toInt()
+          : int.tryParse('${a['bus']}');
+      if (bus == null || seenBuses.contains(bus)) continue;
+      seenBuses.add(bus);
+
+      final uniqueStops = <int>{};
+      for (final s in (a['stops'] as List? ?? [])) {
+        final val = (s is num) ? s.toInt() : int.tryParse('$s');
+        if (val != null && stopIds.contains(val)) {
+          uniqueStops.add(val);
+        }
+      }
+
+      if (uniqueStops.isEmpty) continue;
+      cleaned.add({'bus': bus, 'stops': uniqueStops.toList()});
+    }
+
+    if (cleaned.isEmpty) return false;
+    data['assignments'] = cleaned;
+    return true;
+  }
+
+  bool _normalizePhase3Data(Map<String, dynamic> data) {
+    final rawStops = data['stops'] as List<dynamic>?;
+    final rawAssignments = data['assignments'] as List<dynamic>?;
+    if (rawStops == null || rawAssignments == null) return false;
+
+    // Normalize stops: ensure int ids and double coords.
+    final normStops = <Map<String, dynamic>>[];
+    final stopIds = <int>{};
+    for (final s in rawStops) {
+      if (s is! Map) continue;
+      final id = (s['id'] is num)
+          ? (s['id'] as num).toInt()
+          : int.tryParse('${s['id']}');
+      final pos = s['pos'] as Map?;
+      final lat = (pos?['lat'] as num?)?.toDouble();
+      final lon = (pos?['lon'] as num?)?.toDouble();
+      if (id == null || lat == null || lon == null || lat.isNaN || lon.isNaN) {
+        _showMessage(
+          'Invalid stop data detected. Please rerun Phase 1.',
+          isError: true,
+        );
+        return false;
+      }
+      if (!stopIds.add(id)) {
+        _showMessage(
+          'Duplicate stop IDs detected. Please rerun Phase 1.',
+          isError: true,
+        );
+        return false;
+      }
+      final students =
+          (s['students'] as List?)
+              ?.whereType<num>()
+              .map((e) => e.toInt())
+              .toList() ??
+          <int>[];
+      normStops.add({
+        'id': id,
+        'pos': {'lat': lat, 'lon': lon},
+        'students': students,
+      });
+    }
+
+    // Normalize assignments: ensure int bus and int stops
+    final normAssignments = <Map<String, dynamic>>[];
+    final busIds = <int>{};
+    final seenStops = <int>{};
+    for (final a in rawAssignments) {
+      if (a is! Map) continue;
+      final bus = (a['bus'] is num)
+          ? (a['bus'] as num).toInt()
+          : int.tryParse('${a['bus']}');
+      final stopsList = <int>[];
+      for (final s in (a['stops'] as List? ?? [])) {
+        final val = (s is num) ? s.toInt() : int.tryParse('$s');
+        if (val != null && stopIds.contains(val) && !stopsList.contains(val)) {
+          stopsList.add(val);
+        }
+      }
+      if (bus == null || busIds.contains(bus)) {
+        _showMessage(
+          'Invalid or duplicate bus IDs detected. Please rerun Phase 2.',
+          isError: true,
+        );
+        return false;
+      }
+      if (stopsList.isEmpty) {
+        _showMessage(
+          'Each bus must have at least one stop. Please rerun Phase 2.',
+          isError: true,
+        );
+        return false;
+      }
+      for (final sid in stopsList) {
+        if (!seenStops.add(sid)) {
+          _showMessage(
+            'A stop is assigned to multiple buses. Adjust assignments before Phase 3.',
+            isError: true,
+          );
+          return false;
+        }
+      }
+      normAssignments.add({'bus': bus, 'stops': stopsList});
+    }
+
+    data['stops'] = normStops;
+    data['assignments'] = normAssignments;
+    return true;
+  }
+
   List<String> _getAddresses() {
     final jsonData = StorageService.getBusRouteData();
     if (jsonData == null) return [];
@@ -72,8 +415,12 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     final stops = jsonData['stops'] as List<dynamic>? ?? [];
 
     // Convert students and stops to readable strings
-    final studentIds = students.map((s) => "Student ${s['id']}").toList();
-    final stopIds = stops.map((s) => "Stop ${s['id']}").toList();
+    final studentIds = students
+        .map((s) => "Student ${(s['id'] as int? ?? 0) + 1}")
+        .toList();
+    final stopIds = stops
+        .map((s) => "Stop ${(s['id'] as int? ?? 0) + 1}")
+        .toList();
 
     // Combine both lists
     return [...studentIds, ...stopIds];
@@ -90,7 +437,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     final stops = jsonData['stops'] as List<dynamic>? ?? [];
 
     if (label.startsWith('Student ')) {
-      final id = int.tryParse(label.replaceFirst('Student ', ''));
+      final id = (int.tryParse(label.replaceFirst('Student ', '')) ?? 1) - 1;
       if (id == null) return null;
 
       final student = students.firstWhereOrNull((s) => s['id'] == id);
@@ -102,7 +449,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
 
       return LatLng(lat, lng);
     } else if (label.startsWith('Stop ')) {
-      final id = int.tryParse(label.replaceFirst('Stop ', ''));
+      final id = (int.tryParse(label.replaceFirst('Stop ', '')) ?? 1) - 1;
       if (id == null) return null;
 
       final stop = stops.firstWhereOrNull((s) => s['id'] == id);
@@ -253,7 +600,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
                                             .animateCamera(
                                               CameraUpdate.newLatLngZoom(
                                                 latLng,
-                                                16,
+                                                18,
                                               ),
                                             );
                                       } else {
@@ -636,7 +983,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     }
 
     // Get JSON from session storage
-    final jsonData = StorageService.getBusRouteData();
+    var jsonData = StorageService.getBusRouteData();
     if (jsonData == null) {
       _showMessage(
         'Failed to retrieve location data from storage.',
@@ -645,8 +992,54 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       return;
     }
 
+    // If stops/students changed since last Phase 1 run, prompt to rerun Phase 1.
+    final phase1Dirty = _phase1IsDirty(jsonData);
+    if (phase1Dirty) {
+      final rerun = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Data changed since Phase 1'),
+            content: const Text(
+              'You added or moved stops/students after the last Phase 1 run. '
+              'Rerun Phase 1 to regenerate stops before Phase 2?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Continue without rerun'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Rerun Phase 1'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (rerun == true) {
+        await _generatePhase1Routes();
+        jsonData = StorageService.getBusRouteData();
+        if (jsonData == null) {
+          _showMessage(
+            'Phase 1 rerun failed; cannot continue to Phase 2.',
+            isError: true,
+          );
+          return;
+        }
+      }
+    }
+
     // Remove any old routes before regenerating assignments
     jsonData.remove('routes');
+    jsonData.remove('assignments');
+    jsonData.remove('evals');
+
+    // Validate input before entering WASM.
+    if (!_validatePhase2Input(jsonData)) {
+      return;
+    }
 
     // Phase 2 requires stops from Phase 1
     final stops = jsonData['stops'] as List<dynamic>?;
@@ -707,6 +1100,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       if (brpResult.containsKey('stops')) {
         updatedJsonData['stops'] = brpResult['stops'];
       }
+
+      _writePhase1Signature(updatedJsonData);
 
       debugPrint('Updated JSON with assignments');
 
@@ -777,6 +1172,20 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       return;
     }
 
+    // Drop any previously generated routes/evals so we don't feed stale data
+    // back into the Phase 3 WASM runner after the user has edited assignments.
+    jsonData.remove('routes');
+    jsonData.remove('evals');
+
+    // Clean assignments to avoid malformed payloads while preserving user edits.
+    if (!_cleanAssignmentsForPhase3(jsonData)) {
+      _showMessage(
+        'Phase 3 requires at least one bus with valid stops. Please check assignments.',
+        isError: true,
+      );
+      return;
+    }
+
     debugPrint("===== CURRENT SESSION JSON BEFORE PHASE 3 =====");
     debugPrint(const JsonEncoder.withIndent('  ').convert(jsonData));
     debugPrint("===============================================");
@@ -786,6 +1195,13 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     if (stops == null || stops.isEmpty) {
       _showMessage(
         'Phase 1 must be completed first. Please generate Phase 1 routes.',
+        isError: true,
+      );
+      return;
+    }
+    if (stops.length < 2) {
+      _showMessage(
+        'Phase 3 needs at least 2 stops to build a route. Please add more stops and rerun Phase 2.',
         isError: true,
       );
       return;
