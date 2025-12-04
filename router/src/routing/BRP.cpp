@@ -6,6 +6,7 @@
 #include <ctime>
 #include <cmath>
 #include <limits>
+#include <queue>
 #include "../utils.h"
 #include "../algorithm/mcmf.h"
 #include "../algorithm/dbscan.h"
@@ -38,6 +39,22 @@ int ensure_drive_node(Graph* graph, Coordinate* coord) {
     return node;
 }
 
+int ensure_student_node(Graph* graph, Student* student, bool walkable) {
+    if(!graph || !student) return -1;
+    int& cache = walkable ? student->walk_node : student->drive_node;
+    if(cache >= 0) return cache;
+    cache = graph->get_node(student->pos, walkable);
+    return cache;
+}
+
+int ensure_stop_node(Graph* graph, BusStop* stop, bool walkable) {
+    if(!graph || !stop) return -1;
+    int& cache = walkable ? stop->walk_node : stop->drive_node;
+    if(cache >= 0) return cache;
+    cache = graph->get_node(stop->pos, walkable);
+    return cache;
+}
+
 struct DriveRouteData {
     std::vector<std::vector<ld>> stop_to_stop;
     std::vector<ld> school_to_stop;
@@ -63,7 +80,7 @@ bool build_drive_route_data(
 
     std::vector<int> stop_nodes(n, -1);
     for(size_t i = 0; i < n; ++i) {
-        stop_nodes[i] = ensure_drive_node(graph, stops[i]->pos);
+        stop_nodes[i] = ensure_stop_node(graph, stops[i], false);
     }
     int school_node = ensure_drive_node(graph, school);
     if(school_node < 0) return false;
@@ -137,6 +154,86 @@ double estimate_single_bus_route(const DriveRouteData& data) {
     return total;
 }
 
+void accumulate_stop_walk_metrics(
+    Graph* graph,
+    int walk_node,
+    const std::vector<int>& student_nodes,
+    double walk_cap,
+    double& total,
+    double& worst,
+    double& penalty,
+    size_t& served
+) {
+    if(!graph || walk_node < 0) {
+        penalty += walk_cap;
+        return;
+    }
+    const ld INF = static_cast<ld>(walk_cap * 4.0);
+    const size_t node_count = graph->nodes.size();
+    if(node_count == 0) return;
+    std::unordered_map<int, int> remaining;
+    remaining.reserve(student_nodes.size());
+    for(int node : student_nodes) {
+        if(node < 0) continue;
+        remaining[node] += 1;
+    }
+    struct State {
+        ld dist;
+        int node;
+    };
+    auto cmp = [](const State& a, const State& b){ return a.dist > b.dist; };
+    std::priority_queue<State, std::vector<State>, decltype(cmp)> pq(cmp);
+    std::vector<ld> dist(node_count, INF);
+    dist[walk_node] = 0;
+    pq.push({0, walk_node});
+    double local_max = 0.0;
+    while(!pq.empty()) {
+        State cur = pq.top();
+        pq.pop();
+        if(cur.dist > dist[cur.node]) continue;
+        if(cur.dist > INF) break;
+        auto it = remaining.find(cur.node);
+        if(it != remaining.end()) {
+            double cur_dist = static_cast<double>(cur.dist);
+            for(int cnt = 0; cnt < it->second; ++cnt) {
+                total += cur_dist;
+                local_max = std::max(local_max, cur_dist);
+                worst = std::max(worst, cur_dist);
+                if(cur_dist > walk_cap) {
+                    penalty += (cur_dist - walk_cap) * 3.5;
+                }
+                ++served;
+            }
+            remaining.erase(it);
+            if(remaining.empty()) break;
+        }
+        for(Edge* edge : graph->adj[cur.node]) {
+            if(!edge->is_walkable) continue;
+            int next = static_cast<int>(edge->v);
+            if(next < 0 || next >= static_cast<int>(node_count)) continue;
+            ld ndist = cur.dist + edge->dist;
+            if(ndist >= dist[next] || ndist > INF) continue;
+            dist[next] = ndist;
+            pq.push({ndist, next});
+        }
+    }
+    if(!remaining.empty()) {
+        double capped = static_cast<double>(INF);
+        for(const auto& entry : remaining) {
+            for(int cnt = 0; cnt < entry.second; ++cnt) {
+                total += capped;
+                local_max = std::max(local_max, capped);
+                worst = std::max(worst, capped);
+                if(capped > walk_cap) {
+                    penalty += (capped - walk_cap) * 3.5;
+                }
+                ++served;
+            }
+        }
+    }
+    penalty += local_max * 0.05;
+}
+
 struct WalkStats {
     double score = std::numeric_limits<double>::infinity();
     bool valid = false;
@@ -145,42 +242,35 @@ struct WalkStats {
 WalkStats compute_walk_stats(
     Graph* graph,
     const std::vector<Student*>& students,
-    const std::vector<BusStop*>& stops,
+    std::vector<BusStop*>& stops,
     const std::unordered_map<sid_t, size_t>& sid_index,
     double walk_cap
 ) {
     WalkStats stats;
     if(!graph) return stats;
-    const double inf = walk_cap * 4.0;
     double total = 0.0;
     double worst = 0.0;
     double penalty = 0.0;
     size_t served = 0;
 
-    for(const BusStop* stop : stops) {
+    for(BusStop* stop : stops) {
         if(!stop) {
             penalty += walk_cap;
             continue;
         }
-        int walk_node = graph->get_node(stop->pos, true);
-        std::vector<ld> dist;
-        std::vector<int> prev;
-        graph->sssp(walk_node, true, dist, prev);
-        double local_max = 0.0;
+        int walk_node = ensure_stop_node(graph, stop, true);
+        std::vector<int> student_nodes;
+        student_nodes.reserve(stop->students.size());
         for(sid_t sid : stop->students) {
             auto it = sid_index.find(sid);
             if(it == sid_index.end()) continue;
             Student* stu = students[it->second];
-            int stu_node = graph->get_node(stu->pos, true);
-            ld d = (stu_node >= 0 && stu_node < (int)dist.size()) ? dist[stu_node] : inf;
-            if(!std::isfinite(d)) d = inf;
-            total += d;
-            local_max = std::max(local_max, static_cast<double>(d));
-            worst = std::max(worst, static_cast<double>(d));
-            if(d > walk_cap) penalty += (d - walk_cap) * 3.5;
-            ++served;
+            int stu_node = ensure_student_node(graph, stu, true);
+            if(stu_node >= 0) {
+                student_nodes.push_back(stu_node);
+            }
         }
-        penalty += local_max * 0.05;
+        accumulate_stop_walk_metrics(graph, walk_node, student_nodes, walk_cap, total, worst, penalty, served);
     }
 
     if(served == 0) {
@@ -197,7 +287,7 @@ double score_phase1_solution(
     Graph* graph,
     Coordinate* school,
     const std::vector<Student*>& students,
-    const std::vector<BusStop*>& stops,
+    std::vector<BusStop*>& stops,
     const std::unordered_map<sid_t, size_t>& sid_index,
     double walk_cap,
     const WalkStats* cached_stats = nullptr
@@ -236,11 +326,11 @@ static void merge_dense_stops(Graph* graph, std::vector<BusStop*>& stops, double
         merged = false;
         for(size_t i = 0; i < stops.size() && !merged; ++i) {
             BusStop* lhs = stops[i];
-            int node_i = ensure_drive_node(graph, lhs->pos);
+            int node_i = ensure_stop_node(graph, lhs, false);
             if(node_i < 0) continue;
             for(size_t j = i + 1; j < stops.size(); ++j) {
                 BusStop* rhs = stops[j];
-                int node_j = ensure_drive_node(graph, rhs->pos);
+                int node_j = ensure_stop_node(graph, rhs, false);
                 if(node_j < 0) continue;
                 ld d = graph->get_dist(node_i, node_j, false);
                 if(!std::isfinite(d) || d > limit) continue;
@@ -957,20 +1047,25 @@ void BRP::do_p1() {
 
     consider_solution(base_params);
 
-    const int iteration_budget = std::clamp<int>(static_cast<int>(student_cnt / 10), 6, 18);
+    const double bus_cnt_d = std::max(1.0, static_cast<double>(raw_bus_cnt));
+    const double student_factor = static_cast<double>(student_cnt) / 80.0;
+    const double bus_factor = bus_cnt_d / 8.0;
+    int iteration_budget = static_cast<int>(std::round(1.0 + student_factor + bus_factor));
+    iteration_budget = std::clamp(iteration_budget, 1, 20);
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<double> walk_jitter(0.9, 1.15);
     std::uniform_real_distribution<double> seed_jitter(0.8, 1.2);
     // stop_jitter removed – no explicit stop goal anymore
 
     int stale_iters = 0;
+    const int stale_limit = std::max(1, iteration_budget / 5);
     for(int iter = 0; iter < iteration_budget; ++iter) {
         dbscan::Params iter_params = base_params;
         iter_params.max_walk_dist = std::clamp(base_params.max_walk_dist * walk_jitter(rng), 160.0, mile);
         iter_params.assign_radius = iter_params.max_walk_dist;
         iter_params.seed_radius = std::clamp(base_params.seed_radius * seed_jitter(rng), 60.0, iter_params.max_walk_dist);
         if(!consider_solution(iter_params)) {
-            if(++stale_iters >= 3) break;
+            if(++stale_iters >= stale_limit) break;
         } else {
             stale_iters = 0;
         }
@@ -1064,8 +1159,7 @@ void BRP::do_p2() {
     for(int i = 0; i < M; i++) {
         //for now, just assign bus to random stop
         int stop_ind = random() % N;
-        int graph_ind = graph->get_node(this->stops.value()[stop_ind]->pos, false);
-        cluster_centers[i] = graph_ind;
+        cluster_centers[i] = ensure_stop_node(graph, this->stops.value()[stop_ind], false);
     }
 
     //iterate
@@ -1078,7 +1172,7 @@ void BRP::do_p2() {
     }
     std::vector<int> stop_graph_nodes(N);
     for(int i = 0; i < N; i++) {
-        stop_graph_nodes[i] = graph->get_node(this->stops.value()[i]->pos, false);
+        stop_graph_nodes[i] = ensure_stop_node(graph, this->stops.value()[i], false);
     }
     std::vector<int> assignment;
     const int ITERCNT = 5;
@@ -1116,8 +1210,7 @@ void BRP::do_p2() {
                 std::cout << "NOTHING ASSIGNED TO BUS : " << i << std::endl;
                 //randomly reassign to another stop
                 int stop_ind = random() % N;
-                int graph_ind = graph->get_node(this->stops.value()[stop_ind]->pos, false);
-                cluster_centers[i] = graph_ind;
+                cluster_centers[i] = ensure_stop_node(graph, this->stops.value()[stop_ind], false);
             }
             else {
                 sum[i].first /= amt[i];
@@ -1284,7 +1377,7 @@ void BRP::do_p3() {
     //create mapping between index and graph node index
     std::vector<int> graph_ind(n);
     for(int i = 0; i < n; i++) {
-        graph_ind[i] = graph->get_node(pos[i], false);
+        graph_ind[i] = ensure_stop_node(graph, this->stops.value()[i], false);
     }
 
     //get pairwise distances between all stops
@@ -1481,13 +1574,13 @@ void BRP::do_eval() {
         std::map<bsid_t, int> stop_graphindmp;
         for(int i = 0; i < this->stops.value().size(); i++) {
             BusStop *stop = this->stops.value()[i];
-            stop_graphindmp[stop->id] = graph->get_node(this->stops.value()[i]->pos, true);
+            stop_graphindmp[stop->id] = ensure_stop_node(graph, this->stops.value()[i], true);
         }
 
         std::map<sid_t, int> student_graphindmp;
         for(int i = 0; i < this->students.size(); i++) {
             Student *s = this->students[i];
-            student_graphindmp[s->id] = graph->get_node(s->pos, true);
+            student_graphindmp[s->id] = ensure_student_node(graph, s, true);
         }
 
         std::map<sid_t, bsid_t> student_stopmp;
@@ -1544,7 +1637,7 @@ void BRP::do_eval() {
         std::map<bsid_t, int> stop_graphindmp;
         for(int i = 0; i < this->stops.value().size(); i++) {
             BusStop *stop = this->stops.value()[i];
-            stop_graphindmp[stop->id] = graph->get_node(this->stops.value()[i]->pos, true);
+            stop_graphindmp[stop->id] = ensure_stop_node(graph, this->stops.value()[i], true);
         }
 
         //average assignment compactness

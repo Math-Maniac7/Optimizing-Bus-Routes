@@ -4,6 +4,8 @@ BusStop::BusStop(bsid_t _id, Coordinate* _pos, std::vector<sid_t> _students) {
     id = _id;
     pos = _pos;
     students = _students;
+    walk_node = -1;
+    drive_node = -1;
 }
 
 BusStop* BusStop::parse(json& j) {

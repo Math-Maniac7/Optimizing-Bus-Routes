@@ -3,6 +3,8 @@
 Student::Student(sid_t _id, Coordinate* _pos) {
     id = _id;
     pos = _pos;
+    walk_node = -1;
+    drive_node = -1;
 }
 
 Student* Student::parse(json& j) {
