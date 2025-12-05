@@ -43,7 +43,9 @@ int ensure_student_node(Graph* graph, Student* student, bool walkable) {
     if(!graph || !student) return -1;
     int& cache = walkable ? student->walk_node : student->drive_node;
     if(cache >= 0) return cache;
-    cache = graph->get_node(student->pos, walkable);
+    int node = graph->get_node(student->pos, walkable);
+    if(node < 0) node = graph->get_node(student->pos, true); // force create
+    cache = node;
     return cache;
 }
 
@@ -51,7 +53,9 @@ int ensure_stop_node(Graph* graph, BusStop* stop, bool walkable) {
     if(!graph || !stop) return -1;
     int& cache = walkable ? stop->walk_node : stop->drive_node;
     if(cache >= 0) return cache;
-    cache = graph->get_node(stop->pos, walkable);
+    int node = graph->get_node(stop->pos, walkable);
+    if(node < 0) node = graph->get_node(stop->pos, true); // force create
+    cache = node;
     return cache;
 }
 
@@ -1378,6 +1382,12 @@ void BRP::do_p3() {
     std::vector<int> graph_ind(n);
     for(int i = 0; i < n; i++) {
         graph_ind[i] = ensure_stop_node(graph, this->stops.value()[i], false);
+        if(graph_ind[i] < 0) {
+            throw std::runtime_error(
+                "BRP::do_p3() : failed to create graph node for stop " +
+                std::to_string(this->stops.value()[i]->id)
+            );
+        }
     }
 
     //get pairwise distances between all stops
@@ -1388,8 +1398,11 @@ void BRP::do_p3() {
     }
 
     //get distances from school to all stops and bus yard to all stops
-    int school_graph_ind = graph->get_node(this->school, false);
-    int bus_yard_graph_ind = graph->get_node(this->bus_yard, false);
+    int school_graph_ind = ensure_drive_node(graph, this->school);
+    int bus_yard_graph_ind = ensure_drive_node(graph, this->bus_yard);
+    if(school_graph_ind < 0 || bus_yard_graph_ind < 0) {
+        throw std::runtime_error("BRP::do_p3() : missing school or bus yard graph node");
+    }
     std::vector<ld> school_dist, bus_yard_dist;
     std::vector<int> school_prev, bus_yard_prev;
     graph->sssp(school_graph_ind, false, school_dist, school_prev);

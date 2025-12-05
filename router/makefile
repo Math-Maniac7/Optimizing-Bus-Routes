@@ -54,7 +54,8 @@ EMCC_FLAGS := \
 	-sASYNCIFY \
 	-sFETCH \
 	-s ASSERTIONS=1 \
-	-s ALLOW_MEMORY_GROWTH=1
+	-s ALLOW_MEMORY_GROWTH=1 \
+	-s MINIFY_HTML=0
 
 # Top-level target to build WASM
 wasm: $(WASM_TARGET)
