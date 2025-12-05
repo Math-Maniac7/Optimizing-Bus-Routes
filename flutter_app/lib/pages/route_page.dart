@@ -1403,6 +1403,14 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       _saveMarkers = true;
       _isModified = false;
     });
+
+    // Reset the save flag so subsequent saves trigger the map listener.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _saveMarkers = false;
+      });
+    });
   }
 
   void _onCancel() {
