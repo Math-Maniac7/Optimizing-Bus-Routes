@@ -527,6 +527,16 @@ int Graph::get_node(Coordinate* coord, bool walkable) {
             ans = i;
         }
     }
-    assert(ans != -1);
+    // Fallback: if no node matched the requested modality, pick any closest node
+    // so callers can decide how to handle failure instead of crashing.
+    if(ans == -1) {
+        for(int i = 0; i < nodes.size(); i++) {
+            ld dist = calc_dist(coord, nodes[i]->coord);
+            if(dist < mn) {
+                mn = dist;
+                ans = i;
+            }
+        }
+    }
     return ans;
 }

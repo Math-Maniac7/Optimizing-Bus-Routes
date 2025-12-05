@@ -918,6 +918,16 @@ Graph* BRP::create_graph() {
         min_lon = std::min(min_lon, s->pos->lon);
         max_lon = std::max(max_lon, s->pos->lon);
     }
+    // Include any existing stops so the bounding box always covers edited/added stops.
+    if(this->stops.has_value()) {
+        for(BusStop* stop : this->stops.value()) {
+            if(!stop || !stop->pos) continue;
+            min_lat = std::min(min_lat, stop->pos->lat);
+            max_lat = std::max(max_lat, stop->pos->lat);
+            min_lon = std::min(min_lon, stop->pos->lon);
+            max_lon = std::max(max_lon, stop->pos->lon);
+        }
+    }
 
     // //add 5 mile buffer
     // min_lat -= 0.07;
