@@ -43,7 +43,9 @@ int ensure_student_node(Graph* graph, Student* student, bool walkable) {
     if(!graph || !student) return -1;
     int& cache = walkable ? student->walk_node : student->drive_node;
     if(cache >= 0) return cache;
-    cache = graph->get_node(student->pos, walkable);
+    int node = graph->get_node(student->pos, walkable);
+    if(node < 0) node = graph->get_node(student->pos, true); // fallback to any modality
+    cache = node;
     return cache;
 }
 
@@ -51,7 +53,9 @@ int ensure_stop_node(Graph* graph, BusStop* stop, bool walkable) {
     if(!graph || !stop) return -1;
     int& cache = walkable ? stop->walk_node : stop->drive_node;
     if(cache >= 0) return cache;
-    cache = graph->get_node(stop->pos, walkable);
+    int node = graph->get_node(stop->pos, walkable);
+    if(node < 0) node = graph->get_node(stop->pos, true); // fallback to any modality
+    cache = node;
     return cache;
 }
 
@@ -914,6 +918,16 @@ Graph* BRP::create_graph() {
         min_lon = std::min(min_lon, s->pos->lon);
         max_lon = std::max(max_lon, s->pos->lon);
     }
+    // include existing stops so edits don't fall outside the graph bbox
+    if(this->stops.has_value()) {
+        for(BusStop* stop : this->stops.value()) {
+            if(!stop || !stop->pos) continue;
+            min_lat = std::min(min_lat, stop->pos->lat);
+            max_lat = std::max(max_lat, stop->pos->lat);
+            min_lon = std::min(min_lon, stop->pos->lon);
+            max_lon = std::max(max_lon, stop->pos->lon);
+        }
+    }
 
     // //add 5 mile buffer
     // min_lat -= 0.07;
@@ -1395,6 +1409,60 @@ void BRP::do_p3() {
     graph->sssp(school_graph_ind, false, school_dist, school_prev);
     graph->sssp(bus_yard_graph_ind, false, bus_yard_dist, bus_yard_prev);
 
+    auto safe_idx = [](int idx, size_t size, const std::string& ctx) {
+        if(idx < 0 || static_cast<size_t>(idx) >= size) {
+            throw std::runtime_error("BRP::do_p3() : index OOB in " + ctx + " (" + std::to_string(idx) + " vs " + std::to_string(size) + ")");
+        }
+    };
+
+    auto push_coord_safe = [&](std::vector<Coordinate*>& pathVec, int node, const std::string& ctx)->bool{
+        if(node < 0 || static_cast<size_t>(node) >= graph->nodes.size()) {
+            std::cerr << "BRP::do_p3() : node OOB in " << ctx << " (" << node << ")\n";
+            return false;
+        }
+        pathVec.push_back(graph->nodes[node]->coord->make_copy());
+        return true;
+    };
+
+    auto build_path_coords = [&](const std::vector<int>& prevVec, int start_node, int target_node, const std::string& ctx)->std::vector<Coordinate*> {
+        std::vector<Coordinate*> pathVec;
+        const size_t node_count = graph->nodes.size();
+        if(prevVec.empty() || start_node < 0 || target_node < 0 ||
+           static_cast<size_t>(start_node) >= node_count ||
+           static_cast<size_t>(target_node) >= node_count) {
+            push_coord_safe(pathVec, start_node, ctx);
+            if(start_node != target_node) push_coord_safe(pathVec, target_node, ctx);
+            return pathVec;
+        }
+        int cur = target_node;
+        size_t steps = 0;
+        while(true) {
+            if(!push_coord_safe(pathVec, cur, ctx)) break;
+            if(cur == start_node) break;
+            if(++steps > node_count + 2) { // guard against cycles
+                pathVec.clear();
+                break;
+            }
+            if(cur < 0 || static_cast<size_t>(cur) >= prevVec.size()) {
+                pathVec.clear();
+                break;
+            }
+            int next = prevVec[cur];
+            if(next < 0 || next >= (int)prevVec.size()) {
+                pathVec.clear();
+                break;
+            }
+            cur = next;
+        }
+        if(pathVec.empty()) {
+            push_coord_safe(pathVec, start_node, ctx);
+            if(start_node != target_node) push_coord_safe(pathVec, target_node, ctx);
+        } else {
+            std::reverse(pathVec.begin(), pathVec.end());
+        }
+        return pathVec;
+    };
+
     //for each assignment, solve TSP
     std::srand(std::time(0));
     this->routes = std::vector<BusRoute*>();
@@ -1514,50 +1582,36 @@ void BRP::do_p3() {
 
         std::vector<std::vector<Coordinate*>> paths(m + 1);
         
+        auto get_graph_node = [&](int stopIdx)->int {
+            safe_idx(stopIdx, graph_ind.size(), "graph_ind");
+            return graph_ind[stopIdx];
+        };
+
         //bus yard to first stop
         {
-            std::vector<Coordinate*> path;
-            int ptr = graph_ind[indmp[route_stops[0]]];
-            while(ptr != bus_yard_graph_ind) {
-                assert(bus_yard_prev[ptr] != -1);
-                path.push_back(graph->nodes[ptr]->coord->make_copy());
-                ptr = bus_yard_prev[ptr];
-            }
-            path.push_back(graph->nodes[bus_yard_graph_ind]->coord->make_copy());
-            reverse(path.begin(), path.end());
-            paths[0] = path;
+            int first_stop_idx = indmp[route_stops[0]];
+            int first_node = get_graph_node(first_stop_idx);
+            paths[0] = build_path_coords(bus_yard_prev, bus_yard_graph_ind, first_node, "bus_yard path");
         }   
 
         //between stops
         for(int i = 0; i < m - 1; i++) {
-            std::vector<Coordinate*> path;
             int stop_ind = indmp[route_stops[i]];
-            int stop_graph_ind = graph_ind[stop_ind];
-            int ptr = graph_ind[indmp[route_stops[i + 1]]];
-            while(ptr != stop_graph_ind) {
-                assert(prev[stop_ind][ptr] != -1);
-                path.push_back(graph->nodes[ptr]->coord->make_copy());
-                ptr = prev[stop_ind][ptr];
-            }
-            path.push_back(graph->nodes[stop_graph_ind]->coord->make_copy());
-            reverse(path.begin(), path.end());
-            paths[i + 1] = path;
+            int stop_graph_ind = get_graph_node(stop_ind);
+            int next_stop_ind = indmp[route_stops[i + 1]];
+            int next_graph_ind = get_graph_node(next_stop_ind);
+            safe_idx(stop_ind, prev.size(), "prev outer");
+            auto& stop_prev = prev[stop_ind];
+            paths[i + 1] = build_path_coords(stop_prev, stop_graph_ind, next_graph_ind, "stop path");
         }
 
         //last stop to school
         {
-            std::vector<Coordinate*> path;
             int stop_ind = indmp[route_stops[m - 1]];
-            int stop_graph_ind = graph_ind[stop_ind];
-            int ptr = school_graph_ind;
-            while(ptr != stop_graph_ind) {
-                assert(prev[stop_ind][ptr] != -1);
-                path.push_back(graph->nodes[ptr]->coord->make_copy());
-                ptr = prev[stop_ind][ptr];
-            }
-            path.push_back(graph->nodes[stop_graph_ind]->coord->make_copy());
-            reverse(path.begin(), path.end());
-            paths[m] = path;
+            int stop_graph_ind = get_graph_node(stop_ind);
+            safe_idx(stop_ind, prev.size(), "prev outer");
+            auto& stop_prev = prev[stop_ind];
+            paths[m] = build_path_coords(stop_prev, stop_graph_ind, school_graph_ind, "school path");
         }
 
         this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops, paths, best_dist));
