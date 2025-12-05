@@ -291,6 +291,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     final rawAssignments = data['assignments'] as List<dynamic>? ?? [];
     final cleaned = <Map<String, dynamic>>[];
     final seenBuses = <int>{};
+    final seenIds = <int>{};
+    var nextId = 0;
 
     for (final a in rawAssignments) {
       if (a is! Map) continue;
@@ -299,6 +301,20 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           : int.tryParse('${a['bus']}');
       if (bus == null || seenBuses.contains(bus)) continue;
       seenBuses.add(bus);
+
+      final rawId = (a['id'] is num)
+          ? (a['id'] as num).toInt()
+          : int.tryParse('${a['id']}');
+      int id;
+      if (rawId != null && !seenIds.contains(rawId)) {
+        id = rawId;
+      } else {
+        while (seenIds.contains(nextId)) {
+          nextId++;
+        }
+        id = nextId++;
+      }
+      seenIds.add(id);
 
       final uniqueStops = <int>{};
       for (final s in (a['stops'] as List? ?? [])) {
@@ -309,7 +325,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
       }
 
       if (uniqueStops.isEmpty) continue;
-      cleaned.add({'bus': bus, 'stops': uniqueStops.toList()});
+      cleaned.add({'id': id, 'bus': bus, 'stops': uniqueStops.toList()});
     }
 
     if (cleaned.isEmpty) return false;
@@ -364,6 +380,8 @@ class _RouteOptimizationState extends State<RouteOptimization> {
     final normAssignments = <Map<String, dynamic>>[];
     final busIds = <int>{};
     final seenStops = <int>{};
+    final assignmentIds = <int>{};
+    var nextId = 0;
     for (final a in rawAssignments) {
       if (a is! Map) continue;
       final bus = (a['bus'] is num)
@@ -383,6 +401,19 @@ class _RouteOptimizationState extends State<RouteOptimization> {
         );
         return false;
       }
+      final rawId = (a['id'] is num)
+          ? (a['id'] as num).toInt()
+          : int.tryParse('${a['id']}');
+      int assignmentId;
+      if (rawId != null && !assignmentIds.contains(rawId)) {
+        assignmentId = rawId;
+      } else {
+        while (assignmentIds.contains(nextId)) {
+          nextId++;
+        }
+        assignmentId = nextId++;
+      }
+      assignmentIds.add(assignmentId);
       if (stopsList.isEmpty) {
         _showMessage(
           'Each bus must have at least one stop. Please rerun Phase 2.',
@@ -399,7 +430,7 @@ class _RouteOptimizationState extends State<RouteOptimization> {
           return false;
         }
       }
-      normAssignments.add({'bus': bus, 'stops': stopsList});
+      normAssignments.add({'id': assignmentId, 'bus': bus, 'stops': stopsList});
     }
 
     data['stops'] = normStops;
