@@ -1378,6 +1378,16 @@ void BRP::do_p3() {
         pos[i] = stop->pos->make_copy();
     }
 
+    auto stop_index_by_id = [&](bsid_t id)->int {
+        auto it = indmp.find(id);
+        if(it == indmp.end()) {
+            throw std::runtime_error(
+                "BRP::do_p3() : assignment references unknown stop " + std::to_string(id)
+            );
+        }
+        return it->second;
+    };
+
     //create mapping between index and graph node index
     std::vector<int> graph_ind(n);
     for(int i = 0; i < n; i++) {
@@ -1385,6 +1395,12 @@ void BRP::do_p3() {
         if(graph_ind[i] < 0) {
             throw std::runtime_error(
                 "BRP::do_p3() : failed to create graph node for stop " +
+                std::to_string(this->stops.value()[i]->id)
+            );
+        }
+        if(graph_ind[i] < 0 || graph_ind[i] >= (int)graph->nodes.size()) {
+            throw std::runtime_error(
+                "BRP::do_p3() : invalid graph node index for stop " +
                 std::to_string(this->stops.value()[i]->id)
             );
         }
@@ -1403,6 +1419,41 @@ void BRP::do_p3() {
     if(school_graph_ind < 0 || bus_yard_graph_ind < 0) {
         throw std::runtime_error("BRP::do_p3() : missing school or bus yard graph node");
     }
+    if(school_graph_ind < 0 || static_cast<size_t>(school_graph_ind) >= graph->nodes.size()) {
+        throw std::runtime_error("BRP::do_p3() : invalid school graph node index");
+    }
+    if(bus_yard_graph_ind < 0 || static_cast<size_t>(bus_yard_graph_ind) >= graph->nodes.size()) {
+        throw std::runtime_error("BRP::do_p3() : invalid bus yard graph node index");
+    }
+
+    auto safe_idx = [](int idx, size_t size, const std::string& ctx) {
+        if(idx < 0 || static_cast<size_t>(idx) >= size) {
+            throw std::runtime_error("BRP::do_p3() : index OOB in " + ctx + " (" + std::to_string(idx) + " vs " + std::to_string(size) + ")");
+        }
+    };
+
+    auto ensure_node_bounds = [&](int node, const std::string& ctx) {
+        if(node < 0 || static_cast<size_t>(node) >= graph->nodes.size()) {
+            throw std::runtime_error(
+                "BRP::do_p3() : invalid graph node in " + ctx + " (" + std::to_string(node) + ")"
+            );
+        }
+    };
+
+    auto require_prev = [&](const std::vector<int>& arr, int node, const std::string& ctx) -> int {
+        safe_idx(node, arr.size(), ctx);
+        int next = arr[node];
+        if(next < 0) {
+            throw std::runtime_error("BRP::do_p3() : disconnected path via " + ctx);
+        }
+        return next;
+    };
+
+    auto append_coord = [&](std::vector<Coordinate*>& pathVec, int node, const std::string& ctx){
+        ensure_node_bounds(node, ctx);
+        pathVec.push_back(graph->nodes[node]->coord->make_copy());
+    };
+
     std::vector<ld> school_dist, bus_yard_dist;
     std::vector<int> school_prev, bus_yard_prev;
     graph->sssp(school_graph_ind, false, school_dist, school_prev);
@@ -1423,11 +1474,12 @@ void BRP::do_p3() {
         //array of indexes
         std::vector<int> cur_stops;
         for(bsid_t stop : assignment->stops) {
-            cur_stops.push_back(indmp[stop]);
+            cur_stops.push_back(stop_index_by_id(stop));
         }
 
         std::cout << "GRAPH IND : " << std::endl;
         for(int x : cur_stops) {
+            safe_idx(x, graph_ind.size(), "graph_ind debug");
             std::cout << graph_ind[x] << " ";
         }
         std::cout << std::endl;
@@ -1439,6 +1491,28 @@ void BRP::do_p3() {
         assert(POPULATION_MAX >= 1);
         assert(KEEP_AMT >= 1 && KEEP_AMT < POPULATION_MAX);
         assert(EPOCH_MAX >= 1);
+
+        auto get_stop_idx = [&](int idx)->int {
+            safe_idx(idx, cur_stops.size(), "cur_stops");
+            int stopIdx = cur_stops[idx];
+            safe_idx(stopIdx, graph_ind.size(), "graph_ind");
+            return stopIdx;
+        };
+
+        auto get_graph_node = [&](int stopIdx)->int {
+            safe_idx(stopIdx, graph_ind.size(), "graph_ind");
+            int node = graph_ind[stopIdx];
+            // bus_yard_dist and school_dist share graph sizing
+            safe_idx(node, bus_yard_dist.size(), "graph nodes");
+            ensure_node_bounds(node, "graph node lookup");
+            return node;
+        };
+
+        auto get_dist_val = [&](int stopIdx, int nodeIdx)->ld {
+            safe_idx(stopIdx, dist.size(), "dist outer");
+            safe_idx(nodeIdx, dist[stopIdx].size(), "dist inner");
+            return dist[stopIdx][nodeIdx];
+        };
 
         //initialize with some random permutations 
         std::vector<std::vector<int>> population(POPULATION_MAX);
@@ -1467,13 +1541,17 @@ void BRP::do_p3() {
                 std::vector<int> cur = population[j];
                 assert(cur.size() >= 1);
                 ld cdist = 0;
-                cdist += bus_yard_dist[graph_ind[cur_stops[cur[0]]]];
+                int firstStopIdx = get_stop_idx(cur[0]);
+                int firstNode = get_graph_node(firstStopIdx);
+                cdist += bus_yard_dist[firstNode];
                 for(int k = 0; k < cur.size() - 1; k++) {
-                    int u = cur_stops[cur[k]];
-                    int v = graph_ind[cur_stops[cur[k + 1]]];
-                    cdist += dist[u][v];
+                    int uStop = get_stop_idx(cur[k]);
+                    int vStop = get_stop_idx(cur[k + 1]);
+                    int vNode = get_graph_node(vStop);
+                    cdist += get_dist_val(uStop, vNode);
                 }
-                cdist += dist[cur_stops[cur[cur.size() - 1]]][school_graph_ind];
+                int lastStop = get_stop_idx(cur[cur.size() - 1]);
+                cdist += get_dist_val(lastStop, school_graph_ind);
                 ord[j] = {cdist, j};
             }
             sort(ord.begin(), ord.end());
@@ -1522,7 +1600,10 @@ void BRP::do_p3() {
 
         std::vector<bsid_t> route_stops(m);
         for(int j = 0; j < m; j++) {
-            route_stops[j] = rindmp[cur_stops[best[j]]];
+            safe_idx(best[j], cur_stops.size(), "best route index");
+            int stop_index = cur_stops[best[j]];
+            safe_idx(stop_index, rindmp.size(), "rindmp");
+            route_stops[j] = rindmp[stop_index];
         }
 
         std::vector<std::vector<Coordinate*>> paths(m + 1);
@@ -1530,13 +1611,13 @@ void BRP::do_p3() {
         //bus yard to first stop
         {
             std::vector<Coordinate*> path;
-            int ptr = graph_ind[indmp[route_stops[0]]];
+            int first_stop_idx = stop_index_by_id(route_stops[0]);
+            int ptr = get_graph_node(first_stop_idx);
             while(ptr != bus_yard_graph_ind) {
-                assert(bus_yard_prev[ptr] != -1);
-                path.push_back(graph->nodes[ptr]->coord->make_copy());
-                ptr = bus_yard_prev[ptr];
+                append_coord(path, ptr, "bus_yard path");
+                ptr = require_prev(bus_yard_prev, ptr, "bus_yard_prev");
             }
-            path.push_back(graph->nodes[bus_yard_graph_ind]->coord->make_copy());
+            append_coord(path, bus_yard_graph_ind, "bus_yard path");
             reverse(path.begin(), path.end());
             paths[0] = path;
         }   
@@ -1544,15 +1625,17 @@ void BRP::do_p3() {
         //between stops
         for(int i = 0; i < m - 1; i++) {
             std::vector<Coordinate*> path;
-            int stop_ind = indmp[route_stops[i]];
-            int stop_graph_ind = graph_ind[stop_ind];
-            int ptr = graph_ind[indmp[route_stops[i + 1]]];
+            int stop_ind = stop_index_by_id(route_stops[i]);
+            int stop_graph_ind = get_graph_node(stop_ind);
+            int next_stop_ind = stop_index_by_id(route_stops[i + 1]);
+            int ptr = get_graph_node(next_stop_ind);
+            safe_idx(stop_ind, prev.size(), "prev outer");
+            auto& stop_prev = prev[stop_ind];
             while(ptr != stop_graph_ind) {
-                assert(prev[stop_ind][ptr] != -1);
-                path.push_back(graph->nodes[ptr]->coord->make_copy());
-                ptr = prev[stop_ind][ptr];
+                append_coord(path, ptr, "stop path");
+                ptr = require_prev(stop_prev, ptr, "stop prev");
             }
-            path.push_back(graph->nodes[stop_graph_ind]->coord->make_copy());
+            append_coord(path, stop_graph_ind, "stop path");
             reverse(path.begin(), path.end());
             paths[i + 1] = path;
         }
@@ -1560,15 +1643,16 @@ void BRP::do_p3() {
         //last stop to school
         {
             std::vector<Coordinate*> path;
-            int stop_ind = indmp[route_stops[m - 1]];
-            int stop_graph_ind = graph_ind[stop_ind];
+            int stop_ind = stop_index_by_id(route_stops[m - 1]);
+            int stop_graph_ind = get_graph_node(stop_ind);
             int ptr = school_graph_ind;
+            safe_idx(stop_ind, prev.size(), "prev outer");
+            auto& stop_prev = prev[stop_ind];
             while(ptr != stop_graph_ind) {
-                assert(prev[stop_ind][ptr] != -1);
-                path.push_back(graph->nodes[ptr]->coord->make_copy());
-                ptr = prev[stop_ind][ptr];
+                append_coord(path, ptr, "school path");
+                ptr = require_prev(stop_prev, ptr, "school prev");
             }
-            path.push_back(graph->nodes[stop_graph_ind]->coord->make_copy());
+            append_coord(path, stop_graph_ind, "school path");
             reverse(path.begin(), path.end());
             paths[m] = path;
         }
