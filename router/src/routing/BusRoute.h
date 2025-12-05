@@ -12,8 +12,8 @@ struct BusRoute {
     bsaid_t assignment;
     std::vector<bsid_t> stops;
     std::vector<std::vector<Coordinate*>> paths;
-    ld travel_time;
-    BusRoute(brid_t _id, bsaid_t _assignment, std::vector<bsid_t> _stops, std::vector<std::vector<Coordinate*>> _paths, ld travel_time);
+    ld travel_time_min;
+    BusRoute(brid_t _id, bsaid_t _assignment, std::vector<bsid_t> _stops, std::vector<std::vector<Coordinate*>> _paths, ld _travel_time_min);
 
     static BusRoute* parse(json& j);
     json to_json();

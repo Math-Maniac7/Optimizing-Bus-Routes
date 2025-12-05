@@ -1,11 +1,11 @@
 #include "BusRoute.h"
 
-BusRoute::BusRoute(brid_t _id, bsaid_t _assignment, std::vector<bsid_t> _stops, std::vector<std::vector<Coordinate*>> _paths, ld _travel_time) {
+BusRoute::BusRoute(brid_t _id, bsaid_t _assignment, std::vector<bsid_t> _stops, std::vector<std::vector<Coordinate*>> _paths, ld _travel_time_min) {
     id = _id;
     assignment = _assignment;
     stops = _stops;
     paths = _paths;
-    travel_time = _travel_time;
+    travel_time_min = _travel_time_min;
 }
 
 BusRoute* BusRoute::parse(json& j) {
@@ -45,7 +45,7 @@ json BusRoute::to_json() {
         paths_json.push_back(path);
     }
     ret["paths"] = paths_json;
-    ret["travel_time"] = travel_time;
+    ret["travel_time_min"] = travel_time_min;
     return ret;
 }
 
@@ -58,5 +58,5 @@ BusRoute* BusRoute::make_copy() {
         }
         _paths[i] = _path;
     }
-    return new BusRoute(id, assignment, stops, _paths, travel_time);
+    return new BusRoute(id, assignment, stops, _paths, travel_time_min);
 }

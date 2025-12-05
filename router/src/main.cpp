@@ -254,14 +254,14 @@ int main(){
 int main(int argc, char* argv[]) {
     if(argc < 3) {
         std::cout << "Usage : \n";
-        std::cout << "<p1 | p2 | p3> <in_file>\n";
+        std::cout << "<p1 | p2 | p3 | full> <in_file>\n";
         std::cout << "-o <out_file>\n";
         std::cout << "-geojson : returns a geojson representation of the resulting BRP\n";
         return 1;
     }
 
     std::string type = argv[1];
-    if(!(type == "p1" || type == "p2" || type == "p3")) {
+    if(!(type == "p1" || type == "p2" || type == "p3" || type == "full")) {
         std::cout << "Unknown type : " << type << "\n";
         return 1;
     }
@@ -340,6 +340,13 @@ int main(int argc, char* argv[]) {
         else if(type == "p3") {
             brp->do_p3();
         } 
+        else if(type == "full") {
+            brp->do_p1();
+            brp->validate();
+            brp->do_p2();
+            brp->validate();
+            brp->do_p3();
+        }
         else {
             assert(false);
         }

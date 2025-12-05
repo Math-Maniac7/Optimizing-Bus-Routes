@@ -1560,7 +1560,8 @@ void BRP::do_p3() {
             paths[m] = path;
         }
 
-        this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops, paths, best_dist));
+        ld travel_time_min = best_dist / (1000.0 * 50.0 / 60.0);    //assume 50 km / h for now
+        this->routes.value().push_back(new BusRoute(i, assignment->id, route_stops, paths, travel_time_min));
     }
     
     assert(this->assignments.value().size() == this->routes.value().size());
@@ -1618,6 +1619,17 @@ void BRP::do_eval() {
 
         //number of stops
         eval["nr_stops"] = this->stops.value().size();
+
+        //percentage of students that have to walk over 400 meters
+        ld percent_student_over_400 = 0;
+        for(int i = 0; i < this->students.size(); i++) {
+            Student *s = this->students[i];
+            if(student_distmp[s->id] > 400) {
+                percent_student_over_400 ++;
+            }
+        }
+        percent_student_over_400 /= this->students.size();
+        eval["percent_student_over_400"] = percent_student_over_400;
     }
 
     if(this->assignments.has_value()) {
@@ -1707,21 +1719,30 @@ void BRP::do_eval() {
         assert(this->assignments.has_value());
 
         //average per-bus travel time
-        ld average_bus_travel_time = 0;
+        ld average_bus_travel_time_min = 0;
         for(int i = 0; i < this->routes.value().size(); i++) {
             BusRoute *route = this->routes.value()[i];
-            average_bus_travel_time += route->travel_time;
+            average_bus_travel_time_min += route->travel_time_min;
         }
-        average_bus_travel_time /= this->buses.size();
-        eval["average_bus_travel_time"] = average_bus_travel_time;
+        average_bus_travel_time_min /= this->buses.size();
+        eval["average_bus_travel_time_min"] = average_bus_travel_time_min;
 
         //maximum bus travel time
-        ld maximum_bus_travel_time = 0;
+        ld maximum_bus_travel_time_min = 0;
         for(int i = 0; i < this->routes.value().size(); i++) {
             BusRoute *route = this->routes.value()[i];
-            maximum_bus_travel_time = std::max(maximum_bus_travel_time, route->travel_time);
+            maximum_bus_travel_time_min = std::max(maximum_bus_travel_time_min, route->travel_time_min);
         }
-        eval["maximum_bus_travel_time"] = maximum_bus_travel_time;
+        eval["maximum_bus_travel_time_min"] = maximum_bus_travel_time_min;
+
+        //percentage of buses that take longer than 45 minutes
+        ld percent_bus_travel_over_45min = 0;
+        for(int i = 0; i < this->routes.value().size(); i++) {
+            BusRoute *route = this->routes.value()[i];
+            if(route->travel_time_min > 45) percent_bus_travel_over_45min ++;
+        }
+        percent_bus_travel_over_45min /= this->buses.size();
+        eval["percent_bus_travel_over_45min"] = percent_bus_travel_over_45min;
     }
 
     this->evals = eval;
