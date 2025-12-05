@@ -127,6 +127,11 @@ BRP* parse_brp(char* json_str) {
 
 #if _ISWASM
 
+namespace {
+char kParseErrorMsg[] = "error parsing/validating brp";
+char kValidateErrorMsg[] = "error validating output";
+}
+
 extern EMSCRIPTEN_KEEPALIVE char* json_out_to_C_string(char** json_out){
     return *json_out;
 }
@@ -135,7 +140,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
     *json_out = 0;
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
-        return "error parsing/validating brp";
+        return kParseErrorMsg;
     }
     brp->do_p1();
 
@@ -145,7 +150,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p1(char* json_str, char** json_out) {
     }
     catch(const std::runtime_error e) {
         std::cout << "BRP validation error : " << e.what() << "\n";
-        return "error validating output";
+        return kValidateErrorMsg;
     }
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
     
@@ -169,7 +174,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str, char** json_out) {
     *json_out = 0;
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
-        return "error parsing/validating brp";
+        return kParseErrorMsg;
     }
     brp->do_p2();
 
@@ -179,7 +184,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p2(char* json_str, char** json_out) {
     }
     catch(const std::runtime_error e) {
         std::cout << "BRP validation error : " << e.what() << "\n";
-        return "error validating output";
+        return kValidateErrorMsg;
     }
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 
@@ -204,7 +209,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str, char** json_out) {
     *json_out = 0;
     BRP* brp = parse_brp(json_str);
     if(brp == nullptr) {
-        return "error parsing/validating brp";
+        return kParseErrorMsg;
     }
     brp->do_p3();
 
@@ -214,7 +219,7 @@ extern EMSCRIPTEN_KEEPALIVE char* do_p3(char* json_str, char** json_out) {
     }
     catch(const std::runtime_error e) {
         std::cout << "BRP validation error : " << e.what() << "\n";
-        return "error validating output";
+        return kValidateErrorMsg;
     }
     std::cout << "DONE VALIDATING OUTPUT" << std::endl;
 

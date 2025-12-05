@@ -601,7 +601,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
       position: const LatLng(0, 0),
     );
 
-    for (final entry in routeColors.entries) {
+    // Snapshot entries to avoid concurrent modification while awaiting icon creation.
+    final entries = List.of(routeColors.entries);
+    for (final entry in entries) {
       final bus = entry.key;
       final color = entry.value;
 
@@ -667,7 +669,9 @@ class _GoogleMapsState extends State<GoogleMaps> {
       position: const LatLng(0, 0),
     );
 
-    for (final entry in busColors.entries) {
+    // Snapshot entries to avoid concurrent modification while awaiting icon creation.
+    final entries = List.of(busColors.entries);
+    for (final entry in entries) {
       final color = entry.value;
 
       final marker = await GoogleMapsCustomMarker.createCustomMarker(
